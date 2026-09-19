@@ -48,10 +48,17 @@ pip install pywebview requests
 python widget.py
 ```
 
-或者使用启动脚本：
+或者使用启动脚本（推荐）：
 ```bash
-start_widget.bat
+python run_widget.py
 ```
+
+启动脚本会自动：
+- 检查Python版本
+- 检查依赖是否安装
+- 自动安装缺少的依赖
+- 显示支持的股票列表
+- 启动主程序
 
 ## 使用说明
 
