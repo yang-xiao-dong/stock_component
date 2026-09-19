@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>股价监控系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body { background: transparent; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { padding: 8px; }
+  #card {
+    background: rgba(24, 26, 34, 0.92);
+    border-radius: 12px;
+    padding: 12px 14px 10px;
+    color: #dfe3ea;
+    box-shadow: 0 4px 18px rgba(0,0,0,.45);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  #drag { cursor: move; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; }
+  .name { font-size: 13px; font-weight: 600; color: #aeb6c4; }
+  .name b { color: #e8ebf0; font-size: 14px; margin-right: 6px; }
+  .upd { font-size: 10px; color: #6b7382; }
+  .main { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 2px; }
+  .price { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .chg { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .up { color: #ff5252; } .down { color: #26c281; } .flat { color: #aeb6c4; }
+  .status { font-size: 10px; margin-left: auto; color: #6b7382; }
+  canvas { width: 100%; height: 92px; display: block; margin-top: 4px; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tab { font-size: 10px; padding: 1px 7px; border-radius: 8px; cursor: pointer;
+         color: #6b7382; background: transparent; }
+  .tab.on { color: #e8ebf0; background: rgba(255,255,255,.12); }
+  .grid {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    margin-top: 6px; gap: 2px 6px; font-size: 10px; text-align: center;
+  }
+  .grid .k { color: #6b7382; font-size: 9px; }
+  .grid .v { color: #c8cdd8; font-variant-numeric: tabular-nums; }
+  
+  /* 股票导航 */
+  .stock-nav {
+    display: flex; justify-content: space-between; align-items: center; 
+    margin-bottom: 8px; padding: 6px 8px; background: rgba(255,255,255,.06); 
+    border-radius: 8px;
+  }
+  .nav-btn {
+    background: rgba(255,255,255,.1); color: #e8ebf0; border: none;
+    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;
+    transition: all 0.2s;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,.2); transform: translateY(-1px); }
+  .stock-indicator {
+    color: #e8ebf0; font-size: 12px; font-weight: 500;
+    background: rgba(255,255,255,.1); padding: 4px 10px; border-radius: 6px;
+  }
+  .stock-selector {
+    background: rgba(255,255,255,.1); color: #e8ebf0; border: none;
+    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;
+    min-width: 100px;
+  }
+  .stock-selector:hover { background: rgba(255,255,255,.2); }
+  
+  /* 优化布局 */
+  .header-nav { display: flex; gap: 8px; align-items: center; }
+</style>
+</head>
+<body>
+<div id="card">
+  <!-- 股票导航 -->
+  <div class="stock-nav">
+    <div class="header-nav">
+      <div id="drag" class="header">
+        <span class="name"><b id="name">瑞芯微</b><span id="code">603893.SH</span></span>
+        <span class="upd" id="upd">加载中…</span>
+      </div>
+    </div>
+    <div class="header-nav">
+      <button class="nav-btn" id="prevBtn">← 上一个</button>
+      <select class="stock-selector" id="stockSelector">
+        <option value="0">瑞芯微 603893</option>
+        <option value="1">兆易创新 603986</option>
+        <option value="2">翱捷科技-U 688082</option>
+        <option value="3">龙迅股份 688222</option>
+        <option value="4">中科蓝汛 688023</option>
+        <option value="5">乐鑫科技 688018</option>
+        <option value="6">晶晨股份 688099</option>
+        <option value="7">全志科技 300078</option>
+        <option value="8">恒玄科技 688608</option>
+        <option value="9">炬芯科技 688268</option>
+      </select>
+      <button class="nav-btn" id="nextBtn">下一个 →</button>
+    </div>
+  </div>
+  
+  <!-- 主要信息 -->
+  <div class="main">
+    <span class="price flat" id="price">--</span>
+    <span class="chg flat" id="chg">--</span>
+    <span class="status" id="status"></span>
+    <span class="tabs">
+      <span class="tab on" id="tabMin">分时</span>
+      <span class="tab" id="tabK">日K</span>
+    </span>
+  </div>
+  
+  <!-- 图表 -->
+  <canvas id="chart"></canvas>
+  
+  <!-- 底部信息网格 -->
+  <div class="grid">
+    <div><div class="k">今开</div><div class="v" id="open">--</div></div>
+    <div><div class="k">最高</div><div class="v" id="high">--</div></div>
+    <div><div class="k">最低</div><div class="v" id="low">--</div></div>
+    <div><div class="k">成交量</div><div class="v" id="vol">--</div></div>
+    <div><div class="k">成交额</div><div class="v" id="amt">--</div></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let minuteCache = null, minuteAt = 0, klineCache = null, mode = 'min';
+let currentStockIndex = 0;
+const totalStocks = 10;
+
+function cls(pct) { return pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'); }
+function fmtTime(t) { return t ? t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12,14) : ''; }
+
+function render(rt) {
+  if (!rt) { 
+    $('upd').textContent = '网络错误，重试中…'; 
+    return; 
+  }
+  $('name').textContent = rt.name;
+  $('price').textContent = rt.price.toFixed(2);
+  $('chg').textContent = (rt.change > 0 ? '+' : '') + rt.change.toFixed(2) + '  ' + (rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%';
+  $('price').className = 'price ' + cls(rt.change_pct);
+  $('chg').className = 'chg ' + cls(rt.change_pct);
+  $('open').textContent = rt.open.toFixed(2);
+  $('high').textContent = rt.high.toFixed(2);
+  $('low').textContent = rt.low.toFixed(2);
+  $('vol').textContent = (rt.volume / 10000).toFixed(1) + '万手';
+  $('amt').textContent = rt.amount.toFixed(2) + '亿';
+  $('upd').textContent = fmtTime(rt.time) + ' 更新';
+  
+  const now = new Date(), mts = now.getHours()*60 + now.getMinutes();
+  const trading = (now.getDay() >= 1 && now.getDay() <= 5) &&
+    (mts >= 570 && mts <= 690 || mts >= 780 && mts <= 900);
+  $('status').textContent = trading ? '● 交易中' : '已收盘';
+  
+  // 更新位置指示器
+  $('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
+}
+
+function setupCanvas() {
+  const cv = $('chart'), dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  return { cv, ctx, w, h };
+}
+
+function drawChart(points, prevClose) {
+  const { ctx, w, h } = setupCanvas();
+  if (!points || points.length < 2) return;
+  const prices = points.map(p => p.price);
+  let max = Math.max(...prices, prevClose), min = Math.min(...prices, prevClose);
+  const pad = (max - min) * 0.1 || 0.1; max += pad; min -= pad;
+  const N = 242; // 全天分时槽位
+  const x = i => 2 + i / (N - 1) * (w - 4);
+  const y = p => 6 + (max - p) / (max - min) * (h - 12);
+
+  // 网格
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach(f => {
+    ctx.beginPath(); ctx.moveTo(0, h*f); ctx.lineTo(w, h*f); ctx.stroke();
+  });
+  // 昨收基准线
+  ctx.strokeStyle = 'rgba(255,255,255,.18)';
+  ctx.setLineDash([3,3]); ctx.beginPath();
+  ctx.moveTo(0, y(prevClose)); ctx.lineTo(w, y(prevClose)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 分时折线 + 填充
+  const color = points[points.length-1].price >= prevClose ? '#ff5252' : '#26c281';
+  ctx.beginPath();
+  points.forEach((p, i) => { const px = x(Math.min(i, N-1)); i ? ctx.lineTo(px, y(p.price)) : ctx.moveTo(px, y(p.price)); });
+  ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.lineTo(x(Math.min(points.length-1, N-1)), h); ctx.lineTo(x(0), h); ctx.closePath();
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, color + '55'); g.addColorStop(1, color + '05');
+  ctx.fillStyle = g; ctx.fill();
+}
+
+function drawKline(bars) {
+  const { ctx, w, h } = setupCanvas();
+  if (!bars || bars.length < 2) return;
+  let max = -1e9, min = 1e9;
+  bars.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
+  const pad = (max - min) * 0.08 || 0.1; max += pad; min -= pad;
+  const y = p => 6 + (max - p) / (max - min) * (h - 12);
+  const slot = (w - 4) / bars.length, bw = Math.max(1.5, slot * 0.6);
+
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach(f => {
+    ctx.beginPath(); ctx.moveTo(0, h*f); ctx.lineTo(w, h*f); ctx.stroke();
+  });
+
+  bars.forEach((b, i) => {
+    const cx = 2 + slot * (i + 0.5);
+    const up = b.close >= b.open;
+    const color = up ? '#ff5252' : '#26c281';
+    // 影线
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, y(b.high)); ctx.lineTo(cx, y(b.low)); ctx.stroke();
+    // 实体
+    const yo = y(b.open), yc = y(b.close);
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - bw/2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
+  });
+}
+
+async function refresh() {
+  try {
+    const rt = await pywebview.api.get_realtime();
+    render(rt);
+    if (rt && (!minuteCache || Date.now() - minuteAt > 60000)) {
+      minuteCache = await pywebview.api.get_minute_data();
+      minuteAt = Date.now();
+    }
+    if (!klineCache) {
+      klineCache = await pywebview.api.get_kline();
+    }
+    if (mode === 'min' && minuteCache && rt) drawChart(minuteCache, rt.prev_close);
+    if (mode === 'k' && klineCache) drawKline(klineCache);
+  } catch (e) { 
+    $('upd').textContent = '连接失败…'; 
+  }
+}
+
+// 股票切换功能
+function switchStock(index) {
+  currentStockIndex = index;
+  minuteCache = null;
+  klineCache = null;
+  refresh();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // 初始化位置指示器
+  document.getElementById('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
+  
+  // 上一个按钮
+  $('prevBtn').onclick = () => {
+    currentStockIndex = (currentStockIndex - 1 + totalStocks) % totalStocks;
+    $('stockSelector').value = currentStockIndex;
+    switchStock(currentStockIndex);
+  };
+  
+  // 下一个按钮
+  $('nextBtn').onclick = () => {
+    currentStockIndex = (currentStockIndex + 1) % totalStocks;
+    $('stockSelector').value = currentStockIndex;
+    switchStock(currentStockIndex);
+  };
+  
+  // 股票选择器
+  $('stockSelector').onchange = (e) => {
+    const newIndex = parseInt(e.target.value);
+    currentStockIndex = newIndex;
+    switchStock(currentStockIndex);
+  };
+  
+  // 图表切换
+  $('tabMin').onclick = () => { 
+    mode = 'min'; 
+    $('tabMin').classList.add('on'); 
+    $('tabK').classList.remove('on'); 
+    refresh(); 
+  };
+  $('tabK').onclick = () => { 
+    mode = 'k'; 
+    $('tabK').classList.add('on'); 
+    $('tabMin').classList.remove('on'); 
+    refresh(); 
+  };
+  
+  // 初始刷新
+  refresh();
+  setInterval(refresh, 5000);
+});
+</script>
+</body>
+</html>
