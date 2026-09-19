@@ -78,16 +78,21 @@ class Api:
         if code is None:
             code = STOCKS[self.current_stock_index]["code"]
         
-        # 如果数据过期（超过10秒），重新获取
+        # 如果数据过期（超过10秒）或不存在，重新获取
         if (code not in self.stock_data or 
             self.stock_data[code] is None or 
             time.time() - self.stock_data[code].get("timestamp", 0) > 10):
             try:
-                self.stock_data[code] = stock_api.get_realtime(code)
-                if self.stock_data[code]:
-                    self.stock_data[code]["timestamp"] = time.time()
-            except Exception:
-                self.stock_data[code] = None
+                new_data = stock_api.get_realtime(code)
+                if new_data:
+                    new_data["timestamp"] = time.time()
+                    self.stock_data[code] = new_data
+                else:
+                    # 如果获取失败，保留旧数据（如果有）
+                    pass
+            except Exception as e:
+                # 如果获取失败，保留旧数据（如果有）
+                print(f"获取实时数据失败: {e}")
         
         return self.stock_data.get(code)
     
@@ -95,13 +100,21 @@ class Api:
         """获取分时数据"""
         if code is None:
             code = STOCKS[self.current_stock_index]["code"]
-        return stock_api.get_minute_data(code)
+        try:
+            return stock_api.get_minute_data(code)
+        except Exception as e:
+            print(f"获取分时数据失败: {e}")
+            return None
     
     def get_kline(self, code=None):
         """获取K线数据"""
         if code is None:
             code = STOCKS[self.current_stock_index]["code"]
-        return stock_api.get_kline(code)
+        try:
+            return stock_api.get_kline(code)
+        except Exception as e:
+            print(f"获取K线数据失败: {e}")
+            return None
     
     def background_update(self):
         """后台定时更新数据"""

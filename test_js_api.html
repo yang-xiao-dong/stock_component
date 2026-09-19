@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>JavaScript API测试</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+  .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+  .btn { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  .btn:hover { background: #0056b3; }
+  .result { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+  .error { background: #f8d7da; color: #721c24; }
+  .success { background: #d4edda; color: #155724; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>JavaScript API 测试</h1>
+  
+  <div>
+    <button class="btn" onclick="testRealtime()">测试实时数据</button>
+    <button class="btn" onclick="testMinuteData()">测试分时数据</button>
+    <button class="btn" onclick="testKlineData()">测试K线数据</button>
+    <button class="btn" onclick="clearResults()">清空结果</button>
+  </div>
+  
+  <div id="results"></div>
+</div>
+
+<script>
+  const results = document.getElementById('results');
+  
+  function log(message, type = 'info') {
+    const div = document.createElement('div');
+    div.className = `result ${type}`;
+    div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    results.appendChild(div);
+    results.scrollTop = results.scrollHeight;
+  }
+  
+  function clearResults() {
+    results.innerHTML = '';
+  }
+  
+  async function testRealtime() {
+    log('开始测试实时数据...', 'info');
+    
+    try {
+      if (typeof pywebview === 'undefined') {
+        log('错误: pywebview 未定义', 'error');
+        return;
+      }
+      
+      if (typeof pywebview.api === 'undefined') {
+        log('错误: pywebview.api 未定义', 'error');
+        return;
+      }
+      
+      log('调用 pywebview.api.get_realtime()...', 'info');
+      const rt = await pywebview.api.get_realtime();
+      
+      if (rt) {
+        log(`实时数据获取成功: ${rt.name || 'N/A'} (${rt.code || 'N/A'})`, 'success');
+        log(`价格: ${rt.price || 'N/A'}`, 'info');
+        log(`涨跌: ${rt.change || 'N/A'} (${rt.change_pct || 'N/A'}%)`, 'info');
+        log(`时间: ${rt.time || 'N/A'}`, 'info');
+        log(`完整数据: ${JSON.stringify(rt, null, 2)}`, 'info');
+      } else {
+        log('实时数据获取失败: 返回null', 'error');
+      }
+    } catch (error) {
+      log(`实时数据测试失败: ${error.message}`, 'error');
+      console.error('Realtime test error:', error);
+    }
+  }
+  
+  async function testMinuteData() {
+    log('开始测试分时数据...', 'info');
+    
+    try {
+      if (typeof pywebview === 'undefined') {
+        log('错误: pywebview 未定义', 'error');
+        return;
+      }
+      
+      const minuteData = await pywebview.api.get_minute_data();
+      
+      if (minuteData) {
+        log(`分时数据获取成功: ${minuteData.length} 个数据点`, 'success');
+        if (minuteData.length > 0) {
+          log(`最新数据: ${JSON.stringify(minuteData[minuteData.length - 1], null, 2)}`, 'info');
+        }
+      } else {
+        log('分时数据获取失败: 返回null', 'error');
+      }
+    } catch (error) {
+      log(`分时数据测试失败: ${error.message}`, 'error');
+      console.error('Minute test error:', error);
+    }
+  }
+  
+  async function testKlineData() {
+    log('开始测试K线数据...', 'info');
+    
+    try {
+      if (typeof pywebview === 'undefined') {
+        log('错误: pywebview 未定义', 'error');
+        return;
+      }
+      
+      const klineData = await pywebview.api.get_kline();
+      
+      if (klineData) {
+        log(`K线数据获取成功: ${klineData.length} 个数据点`, 'success');
+        if (klineData.length > 0) {
+          log(`最新数据: ${JSON.stringify(klineData[klineData.length - 1], null, 2)}`, 'info');
+        }
+      } else {
+        log('K线数据获取失败: 返回null', 'error');
+      }
+    } catch (error) {
+      log(`K线数据测试失败: ${error.message}`, 'error');
+      console.error('Kline test error:', error);
+    }
+  }
+  
+  // 页面加载完成后自动测试
+  window.addEventListener('load', function() {
+    log('页面加载完成，等待pywebview初始化...', 'info');
+    
+    // 检查pywebview是否可用
+    setTimeout(() => {
+      if (typeof pywebview !== 'undefined') {
+        log('pywebview 可用', 'success');
+        testRealtime();
+      } else {
+        log('pywebview 不可用，请在pywebview环境中打开此页面', 'error');
+      }
+    }, 1000);
+  });
+</script>
+</body>
+</html>
