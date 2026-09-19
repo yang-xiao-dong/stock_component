@@ -133,19 +133,25 @@ function fmtTime(t) { return t ? t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12
 function render(rt) {
   if (!rt) { 
     $('upd').textContent = '网络错误，重试中…'; 
+    console.error('Render error: No realtime data');
     return; 
   }
-  $('name').textContent = rt.name;
-  $('price').textContent = rt.price.toFixed(2);
-  $('chg').textContent = (rt.change > 0 ? '+' : '') + rt.change.toFixed(2) + '  ' + (rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%';
-  $('price').className = 'price ' + cls(rt.change_pct);
-  $('chg').className = 'chg ' + cls(rt.change_pct);
-  $('open').textContent = rt.open.toFixed(2);
-  $('high').textContent = rt.high.toFixed(2);
-  $('low').textContent = rt.low.toFixed(2);
-  $('vol').textContent = (rt.volume / 10000).toFixed(1) + '万手';
-  $('amt').textContent = rt.amount.toFixed(2) + '亿';
-  $('upd').textContent = fmtTime(rt.time) + ' 更新';
+  
+  console.log('Rendering data:', rt);
+  
+  $('name').textContent = rt.name || '--';
+  $('price').textContent = rt.price ? rt.price.toFixed(2) : '--';
+  $('chg').textContent = rt.change !== undefined ? 
+    (rt.change > 0 ? '+' : '') + rt.change.toFixed(2) + '  ' + 
+    (rt.change_pct !== undefined ? (rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%' : '--') : '--';
+  $('price').className = 'price ' + cls(rt.change_pct || 0);
+  $('chg').className = 'chg ' + cls(rt.change_pct || 0);
+  $('open').textContent = rt.open ? rt.open.toFixed(2) : '--';
+  $('high').textContent = rt.high ? rt.high.toFixed(2) : '--';
+  $('low').textContent = rt.low ? rt.low.toFixed(2) : '--';
+  $('vol').textContent = rt.volume ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
+  $('amt').textContent = rt.amount ? rt.amount.toFixed(2) + '亿' : '--';
+  $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
   
   const now = new Date(), mts = now.getHours()*60 + now.getMinutes();
   const trading = (now.getDay() >= 1 && now.getDay() <= 5) &&
@@ -156,7 +162,7 @@ function render(rt) {
   $('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
   
   // 更新窗口标题
-  updateWindowTitle(rt.name, rt.code);
+  updateWindowTitle(rt.name || '--', rt.code || '--');
 }
 
 function setupCanvas() {
@@ -238,10 +244,13 @@ async function refresh() {
     if (!klineCache) {
       klineCache = await pywebview.api.get_kline();
     }
-    if (mode === 'min' && minuteCache && rt) drawChart(minuteCache, rt.prev_close);
+    // 修复：使用 prev_close 或 open 作为昨收价
+    const prevClose = rt.prev_close || rt.open || 0;
+    if (mode === 'min' && minuteCache && rt) drawChart(minuteCache, prevClose);
     if (mode === 'k' && klineCache) drawKline(klineCache);
   } catch (e) { 
     $('upd').textContent = '连接失败…'; 
+    console.error('Refresh error:', e);
   }
 }
 
