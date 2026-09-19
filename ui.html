@@ -122,6 +122,11 @@ let minuteCache = null, minuteAt = 0, klineCache = null, mode = 'min';
 let currentStockIndex = 0;
 const totalStocks = 10;
 
+// 更新窗口标题
+function updateWindowTitle(name, code) {
+  document.title = `${name} ${code}`;
+}
+
 function cls(pct) { return pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'); }
 function fmtTime(t) { return t ? t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12,14) : ''; }
 
@@ -149,6 +154,9 @@ function render(rt) {
   
   // 更新位置指示器
   $('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
+  
+  // 更新窗口标题
+  updateWindowTitle(rt.name, rt.code);
 }
 
 function setupCanvas() {

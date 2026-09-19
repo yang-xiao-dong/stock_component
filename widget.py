@@ -113,17 +113,6 @@ class Api:
 def main():
     api = Api()
     
-    def on_created(window):
-        """窗口创建后的回调"""
-        # 设置窗口标题
-        def update_title():
-            current = STOCKS[api.current_stock_index]
-            window.set_title(f"{current['name']} {current['code']}")
-        
-        # 定时更新标题
-        window.events.loaded += lambda: update_title()
-        window.events.closing += lambda: False  # 阻止关闭窗口，保持运行
-    
     window = webview.create_window(
         "瑞芯微 603893",
         UI_PATH,
@@ -136,7 +125,6 @@ def main():
         on_top=True,
         easy_drag=True,   # 无边框窗口可直接拖动
         transparent=False,
-        on_created=on_created,
     )
     webview.start()
 
