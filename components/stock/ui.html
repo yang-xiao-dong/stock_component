@@ -2,55 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>股价监控系统</title>
+<title>个股行情</title>
+<link rel="stylesheet" href="../../assets/shared.css">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
-  html, body {
-    background: transparent;
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    overflow: hidden;
-    height: 100%;
-  }
-  body { padding: 8px; }
-  #card {
-    background: rgba(24, 26, 34, 0.92);
-    border-radius: 12px;
-    padding: 10px 12px 8px;
-    color: #dfe3ea;
-    box-shadow: 0 4px 18px rgba(0,0,0,.45);
-    border: 1px solid rgba(255,255,255,.08);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-  }
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    cursor: move;
-    flex-shrink: 0;
-  }
-  .name { font-size: 13px; font-weight: 600; color: #aeb6c4; white-space: nowrap; }
-  .name b { color: #e8ebf0; font-size: 14px; margin-right: 6px; }
-  .upd { font-size: 10px; color: #6b7382; flex-shrink: 0; margin-left: 8px; }
-  .main { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; flex-shrink: 0; }
-  .price { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  /* 个股视图专属样式（基础样式见 shared.css） */
+  .price { font-size: 32px; }
   .chg { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .up { color: #ff5252; } .down { color: #26c281; } .flat { color: #aeb6c4; }
-  .status { font-size: 10px; margin-left: auto; color: #6b7382; white-space: nowrap; }
-  canvas { width: 100%; height: 92px; flex: 1; min-height: 80px; display: block; margin-top: 4px; }
-  .tabs { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; }
-  .tab { font-size: 10px; padding: 1px 7px; border-radius: 8px; cursor: pointer;
-         color: #6b7382; background: transparent; }
-  .tab.on { color: #e8ebf0; background: rgba(255,255,255,.12); }
-  .grid {
-    display: grid; grid-template-columns: repeat(5, 1fr);
-    margin-top: 6px; gap: 2px 6px; font-size: 10px; text-align: center;
-    flex-shrink: 0;
-  }
-  .grid .k { color: #6b7382; font-size: 9px; }
-  .grid .v { color: #c8cdd8; font-variant-numeric: tabular-nums; }
+  canvas { height: 92px; min-height: 80px; }
 
   .stock-nav {
     display: flex;
@@ -60,11 +18,7 @@
     min-width: 0;
     flex-shrink: 0;
   }
-  .stock-swiper {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-  }
+  .stock-swiper { flex: 1; min-width: 0; overflow: hidden; }
   .stock-list {
     display: flex;
     gap: 4px;
@@ -116,30 +70,13 @@
     white-space: nowrap;
   }
 
-  .rz {
-    position: absolute;
-    z-index: 30;
-    background: transparent;
+  .grid {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    margin-top: 6px; gap: 2px 6px; font-size: 10px; text-align: center;
+    flex-shrink: 0;
   }
-  .rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
-  .rz-s { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
-  .rz-w { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
-  .rz-e { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
-  .rz-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
-  .rz-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
-  .rz-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
-  .rz-se {
-    right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize;
-  }
-  .rz-se i {
-    position: absolute;
-    right: 3px; bottom: 3px;
-    width: 8px; height: 8px;
-    border-right: 2px solid rgba(255,255,255,.4);
-    border-bottom: 2px solid rgba(255,255,255,.4);
-    border-radius: 1px;
-    pointer-events: none;
-  }
+  .grid .k { color: #6b7382; font-size: 9px; }
+  .grid .v { color: #c8cdd8; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -162,6 +99,10 @@
     <span class="price flat" id="price">--</span>
     <span class="chg flat" id="chg">--</span>
     <span class="status" id="status"></span>
+    <span class="vswitch">
+      <span class="vs on" data-view="stock">个股</span>
+      <span class="vs" data-view="group">组合</span>
+    </span>
     <span class="tabs">
       <span class="tab on" id="tabMin">分时</span>
       <span class="tab" id="tabK">日K</span>
@@ -187,8 +128,9 @@
   <div class="rz rz-se" data-resize="se" title="拖动调整窗口大小"><i></i></div>
 </div>
 
+<script src="../../assets/shared.js"></script>
 <script>
-const $ = id => document.getElementById(id);
+/* 个股视图逻辑（工具函数见 shared.js） */
 let minuteCache = null, minuteAt = 0, klineCache = null, mode = 'min';
 let currentStockIndex = 0;
 let stocks = [];
@@ -197,31 +139,15 @@ let lastRt = null;
 const FALLBACK_STOCKS = [
   { code: "sh603893", name: "瑞芯微" },
   { code: "sh603986", name: "兆易创新" },
-  { code: "sh688082", name: "翱捷科技-U" },
-  { code: "sh688222", name: "龙迅股份" },
-  { code: "sh688023", name: "中科蓝汛" },
+  { code: "sh688220", name: "翱捷科技-U" },
+  { code: "sh688486", name: "龙迅股份" },
+  { code: "sh688332", name: "中科蓝讯" },
   { code: "sh688018", name: "乐鑫科技" },
   { code: "sh688099", name: "晶晨股份" },
-  { code: "sz300078", name: "全志科技" },
+  { code: "sz300458", name: "全志科技" },
   { code: "sh688608", name: "恒玄科技" },
-  { code: "sh688268", name: "炬芯科技" },
+  { code: "sh688049", name: "炬芯科技" },
 ];
-
-function api() {
-  return (window.pywebview && pywebview.api) ? pywebview.api : null;
-}
-
-function fmtCode(code) {
-  if (!code) return '--';
-  const raw = String(code);
-  if (raw.includes('.')) return raw.toUpperCase();
-  if (raw.startsWith('sh')) return raw.slice(2) + '.SH';
-  if (raw.startsWith('sz')) return raw.slice(2) + '.SZ';
-  return raw;
-}
-
-function cls(pct) { return pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'); }
-function fmtTime(t) { return t ? t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12,14) : ''; }
 
 function renderStockList() {
   const list = $('stockList');
@@ -266,19 +192,8 @@ function render(rt) {
   $('amt').textContent = rt.amount != null ? rt.amount.toFixed(2) + '亿' : '--';
   $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
 
-  const now = new Date(), mts = now.getHours()*60 + now.getMinutes();
-  const trading = (now.getDay() >= 1 && now.getDay() <= 5) &&
-    ((mts >= 570 && mts <= 690) || (mts >= 780 && mts <= 900));
-  $('status').textContent = trading ? '● 交易中' : '已收盘';
+  $('status').textContent = isTrading() ? '● 交易中' : '已收盘';
   document.title = `${rt.name || '--'} ${fmtCode(rt.code)}`;
-}
-
-function setupCanvas() {
-  const cv = $('chart'), dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = cv.clientHeight;
-  cv.width = w * dpr; cv.height = h * dpr;
-  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
-  return { cv, ctx, w, h };
 }
 
 function drawChart(points, prevClose) {
@@ -425,42 +340,6 @@ function bindNav() {
   };
 }
 
-function bindResize() {
-  const dirs = {
-    n: {x:0,y:-1}, s:{x:0,y:1}, w:{x:-1,y:0}, e:{x:1,y:0},
-    nw:{x:-1,y:-1}, ne:{x:1,y:-1}, sw:{x:-1,y:1}, se:{x:1,y:1}
-  };
-  document.querySelectorAll('[data-resize]').forEach(el => {
-    el.addEventListener('pointerdown', async e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const py = api();
-      if (!py) return;
-      try {
-        if (py.start_resize && await py.start_resize(el.dataset.resize)) return;
-      } catch (err) { console.error(err); }
-      if (!py.resize_to || !py.get_window_size) return;
-      const dir = dirs[el.dataset.resize] || dirs.se;
-      const size = await py.get_window_size();
-      const sx = e.screenX, sy = e.screenY;
-      const w0 = size.width, h0 = size.height;
-      const move = ev => {
-        py.resize_to(w0 + dir.x * (ev.screenX - sx), h0 + dir.y * (ev.screenY - sy));
-      };
-      const up = () => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
-      };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
-    });
-  });
-  window.addEventListener('resize', () => {
-    clearTimeout(bindResize._t);
-    bindResize._t = setTimeout(redrawChart, 40);
-  });
-}
-
 async function init() {
   stocks = FALLBACK_STOCKS;
   const py = api();
@@ -472,6 +351,7 @@ async function init() {
   }
   renderStockList();
   bindNav();
+  bindViewSwitch();
   bindResize();
   await refresh();
   setInterval(refresh, 5000);

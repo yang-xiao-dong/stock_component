@@ -15,6 +15,27 @@ session = requests.Session()
 session.headers.update(HEADERS)
 
 
+def _parse_fields(f):
+    """解析腾讯行情字段为 dict
+    腾讯字段: 1名称 2代码 3最新价 4昨收 5今开 6成交量(手) ...
+    30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
+    """
+    return {
+        "name": f[1],
+        "code": f[2],
+        "price": float(f[3]),
+        "prev_close": float(f[4]),
+        "open": float(f[5]),
+        "time": f[30],
+        "change": float(f[31]),
+        "change_pct": float(f[32]),
+        "high": float(f[33]),
+        "low": float(f[34]),
+        "volume": float(f[36]),        # 手
+        "amount": float(f[37]) / 10000,  # 亿元
+    }
+
+
 def get_realtime(code=CODE):
     """返回实时行情 dict，失败返回 None"""
     url = f"https://qt.gtimg.cn/q={code}"
@@ -24,25 +45,28 @@ def get_realtime(code=CODE):
         m = re.search(r'"([^"]+)"', r.text)
         if not m:
             return None
-        f = m.group(1).split("~")
-        # 腾讯字段: 1名称 2代码 3最新价 4昨收 5今开 6成交量(手) ...
-        # 30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
-        return {
-            "name": f[1],
-            "code": f[2],
-            "price": float(f[3]),
-            "prev_close": float(f[4]),
-            "open": float(f[5]),
-            "time": f[30],
-            "change": float(f[31]),
-            "change_pct": float(f[32]),
-            "high": float(f[33]),
-            "low": float(f[34]),
-            "volume": float(f[36]),        # 手
-            "amount": float(f[37]) / 10000,  # 亿元
-        }
+        return _parse_fields(m.group(1).split("~"))
     except Exception:
         return None
+
+
+def get_realtime_batch(codes):
+    """批量实时行情 {code: dict}，一次请求取整组；失败返回 {}"""
+    if not codes:
+        return {}
+    url = "https://qt.gtimg.cn/q=" + ",".join(codes)
+    try:
+        r = session.get(url, timeout=6)
+        r.encoding = "gbk"
+        out = {}
+        # 返回顺序与请求顺序一致，按位置配对
+        for code, raw in zip(codes, re.findall(r'"([^"]+)"', r.text)):
+            f = raw.split("~")
+            if len(f) > 37:
+                out[code] = _parse_fields(f)
+        return out
+    except Exception:
+        return {}
 
 
 def get_kline(code=CODE, count=60, period="day"):

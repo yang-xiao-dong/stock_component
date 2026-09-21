@@ -1,0 +1,72 @@
+/* 公共样式：卡片、头部、行情数字、标签/切换器、缩放手柄（各组件界面引用） */
+
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+html, body {
+  background: transparent;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+  height: 100%;
+}
+body { padding: 8px; }
+#card {
+  background: rgba(24, 26, 34, 0.92);
+  border-radius: 12px;
+  padding: 10px 12px 8px;
+  color: #dfe3ea;
+  box-shadow: 0 4px 18px rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.08);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  cursor: move;
+  flex-shrink: 0;
+}
+.name { font-size: 13px; font-weight: 600; color: #aeb6c4; white-space: nowrap; }
+.name b { color: #e8ebf0; font-size: 14px; margin-right: 6px; }
+.upd { font-size: 10px; color: #6b7382; flex-shrink: 0; margin-left: 8px; }
+.main { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; flex-shrink: 0; }
+.price { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.up { color: #ff5252; } .down { color: #26c281; } .flat { color: #aeb6c4; }
+.status { font-size: 10px; margin-left: auto; color: #6b7382; white-space: nowrap; }
+canvas { width: 100%; flex: 1; min-height: 110px; display: block; margin-top: 4px; }
+
+.tabs { display: flex; gap: 4px; flex-shrink: 0; }
+.tab { font-size: 10px; padding: 1px 7px; border-radius: 8px; cursor: pointer;
+       color: #6b7382; background: transparent; }
+.tab.on { color: #e8ebf0; background: rgba(255,255,255,.12); }
+
+/* 「个股 | 组合」视图切换器 */
+.vswitch { display: flex; gap: 3px; margin-right: 6px; flex-shrink: 0; }
+.vs { font-size: 10px; padding: 1px 7px; border-radius: 8px; cursor: pointer;
+      color: #6b7382; border: 1px solid transparent; }
+.vs.on { color: #ffd54f; border-color: rgba(255,213,79,.45); background: rgba(255,213,79,.08); }
+
+.gtag { font-size: 9px; color: #ffd54f; background: rgba(255,213,79,.12);
+        padding: 1px 5px; border-radius: 6px; margin-left: 6px; }
+.demo-tag { font-size: 9px; color: #ffd54f; background: rgba(255,213,79,.18);
+            padding: 1px 5px; border-radius: 6px; margin-left: 6px; }
+
+/* 无边框窗口的拖边缩放手柄 */
+.rz { position: absolute; z-index: 30; background: transparent; }
+.rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.rz-s { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.rz-w { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+.rz-e { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+.rz-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.rz-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.rz-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.rz-se { right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize; }
+.rz-se i {
+  position: absolute; right: 3px; bottom: 3px;
+  width: 8px; height: 8px;
+  border-right: 2px solid rgba(255,255,255,.4);
+  border-bottom: 2px solid rgba(255,255,255,.4);
+  border-radius: 1px;
+  pointer-events: none;
+}
