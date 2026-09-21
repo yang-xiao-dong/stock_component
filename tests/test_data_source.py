@@ -5,6 +5,7 @@
 import os
 import sys
 import tempfile
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -58,6 +59,22 @@ def test_mode_switch_and_getters():
 
 def test_bad_mode():
     assert data_source.set_mode("nonsense") is False
+
+
+def test_should_auto_save():
+    # 2026-09-21 是周一、2026-09-19 是周六
+    ok_now = datetime(2026, 9, 21, 15, 30)
+    assert data_source.should_auto_save(ok_now, [], "2026-09-21") is True
+    # 周末不保存
+    assert data_source.should_auto_save(datetime(2026, 9, 19, 16, 0), [], "2026-09-19") is False
+    # 收盘缓冲时刻之前不保存
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 14, 59), [], "2026-09-21") is False
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 15, 4), [], "2026-09-21") is False
+    # 已有当日快照：防重复保存/覆盖
+    assert data_source.should_auto_save(ok_now, ["2026-09-21"], "2026-09-21") is False
+    # 节假日（当日无新K线）与无K线数据
+    assert data_source.should_auto_save(ok_now, [], "2026-09-18") is False
+    assert data_source.should_auto_save(ok_now, [], None) is False
 
 
 if __name__ == "__main__":

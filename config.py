@@ -39,3 +39,11 @@ WINDOW = {
 # 后台刷新间隔（秒）
 REFRESH = {"realtime": 5, "minute": 60, "kline": 600}
 KLINE_DAYS = 60  # 组合日K取的天数
+
+# 收盘自动快照：交易日此时刻之后自动保存当日数据；
+# 已有当日快照 / 节假日无行情则跳过（幂等，不重复不覆盖）
+AUTO_SNAPSHOT = {
+    "interval": 300,  # 检查间隔（秒）
+    "hour": 15,       # 收盘 15:00 + 缓冲
+    "minute": 5,
+}

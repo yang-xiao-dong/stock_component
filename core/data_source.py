@@ -9,8 +9,9 @@
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
-from config import KLINE_DAYS, STOCKS
+from config import AUTO_SNAPSHOT, KLINE_DAYS, STOCKS
 from core import stock_api
 from core.data_define import MarketSnapshot, load_snapshot, save_snapshot
 from core.data_define.snapshot import SNAPSHOT_DIR
@@ -79,6 +80,36 @@ def capture_today():
     )
     path = save_snapshot(snap)
     return {"ok": True, "date": snap.date, "path": path}
+
+
+# ---------- 收盘自动保存 ----------
+
+def should_auto_save(now, existing_dates, last_kline_date):
+    """自动保存判定（纯函数）：交易日收盘后、当日尚无快照、当日确有行情"""
+    if now.weekday() >= 5:            # 周末
+        return False
+    if (now.hour, now.minute) < (AUTO_SNAPSHOT["hour"], AUTO_SNAPSHOT["minute"]):
+        return False                  # 未到收盘缓冲时刻
+    today = now.strftime("%Y-%m-%d")
+    if today in existing_dates:       # 已保存：避免重复保存与覆盖
+        return False
+    if last_kline_date != today:      # 节假日（当日无新K线）
+        return False
+    return True
+
+
+def auto_save_tick():
+    """定时任务入口：收盘后自动保存当日快照（幂等）"""
+    try:
+        probe = stock_api.get_kline(STOCKS[0]["code"], 3)
+        last_date = probe[-1]["date"] if probe else None
+        if not should_auto_save(datetime.now(), set(list_snapshots()), last_date):
+            return
+        r = capture_today()
+        if r.get("ok"):
+            print(f"[快照] 收盘自动保存 {r['date']} -> {r['path']}", flush=True)
+    except Exception as e:
+        print(f"[快照] 自动保存失败: {e}", flush=True)
 
 
 # ---------- 取数入口（组件统一从这里拿数据） ----------

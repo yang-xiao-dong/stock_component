@@ -15,7 +15,7 @@ from pathlib import Path
 
 import webview
 
-from config import APP_TITLE, WINDOW
+from config import APP_TITLE, AUTO_SNAPSHOT, WINDOW
 from core import data_source, http_server
 from core.scheduler import Scheduler
 from core.window_utils import WindowControls
@@ -133,6 +133,9 @@ def assemble(components):
 
     for comp in components:
         api.mount(comp, comp.create_api(scheduler=scheduler))
+
+    # 收盘自动快照（交易日收盘后保存，已存在/节假日跳过）
+    scheduler.add("app.auto_snapshot", AUTO_SNAPSHOT["interval"], data_source.auto_save_tick)
 
     scheduler.start()
     webview.start()
