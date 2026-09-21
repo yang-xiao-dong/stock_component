@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """单窗口多股票股价监控系统 — pywebview 置顶悬浮窗"""
 import os
+import sys
 import threading
 import time
 
@@ -8,7 +9,13 @@ import webview
 
 import stock_api
 
+MIN_WIDTH, MIN_HEIGHT = 360, 260
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 500, 380
+
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
+
+_WINDOW = None
+_HWND = 0
 
 # 支持的股票列表
 STOCKS = [
@@ -19,7 +26,7 @@ STOCKS = [
     {"code": "sh688023", "name": "中科蓝汛"},
     {"code": "sh688018", "name": "乐鑫科技"},
     {"code": "sh688099", "name": "晶晨股份"},
-    {"code": "sh300078", "name": "全志科技"},
+    {"code": "sz300078", "name": "全志科技"},
     {"code": "sh688608", "name": "恒玄科技"},
     {"code": "sh688268", "name": "炬芯科技"},
 ]
@@ -116,29 +123,105 @@ class Api:
             print(f"获取K线数据失败: {e}")
             return None
     
+    def set_stock_index(self, index):
+        """设置当前股票索引"""
+        if 0 <= index < len(STOCKS):
+            self.current_stock_index = index
+            # 清除当前股票的缓存，强制重新获取数据
+            code = STOCKS[self.current_stock_index]["code"]
+            if code in self.stock_data:
+                del self.stock_data[code]
+            return True
+        return False
+
     def background_update(self):
         """后台定时更新数据"""
         while True:
             time.sleep(5)  # 每5秒更新一次
             self.update_all_stock_data()
 
+    def start_resize(self, edge="se"):
+        """无边框窗口：从指定边缘开始原生缩放"""
+        if sys.platform != "win32":
+            return False
+        hit = {
+            "w": 10, "e": 11, "n": 12, "nw": 13, "ne": 14,
+            "s": 15, "sw": 16, "se": 17,
+        }.get(str(edge), 17)
+        try:
+            import ctypes
+            hwnd = _HWND or ctypes.windll.user32.GetForegroundWindow()
+            if not hwnd:
+                return False
+            user32 = ctypes.windll.user32
+            user32.ReleaseCapture()
+            user32.SendMessageW(hwnd, 0x00A1, hit, 0)  # WM_NCLBUTTONDOWN
+            return True
+        except Exception:
+            return False
+
+    def resize_to(self, width, height):
+        """按像素调整窗口大小（不访问 native 句柄）"""
+        if _WINDOW is None:
+            return False
+        try:
+            w = max(MIN_WIDTH, min(int(width), 1600))
+            h = max(MIN_HEIGHT, min(int(height), 1200))
+            _WINDOW.resize(w, h)
+            return True
+        except Exception:
+            return False
+
+    def get_window_size(self):
+        if _WINDOW is None:
+            return {"width": DEFAULT_WIDTH, "height": DEFAULT_HEIGHT}
+        try:
+            return {"width": int(_WINDOW.width), "height": int(_WINDOW.height)}
+        except Exception:
+            return {"width": DEFAULT_WIDTH, "height": DEFAULT_HEIGHT}
+
+
+def _enable_frameless_resize(*_args):
+    """用 Win32 API 缓存窗口句柄并允许拖边缩放，避免访问 window.native"""
+    global _HWND
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return
+        _HWND = hwnd
+        GWL_STYLE = -16
+        WS_THICKFRAME = 0x00040000
+        style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+        user32.SetWindowLongW(hwnd, GWL_STYLE, style | WS_THICKFRAME)
+    except Exception:
+        pass
+
 
 def main():
+    global _WINDOW
     api = Api()
-    
+
     window = webview.create_window(
         "瑞芯微 603893",
         UI_PATH,
         js_api=api,
-        width=380,
-        height=280,
+        width=DEFAULT_WIDTH,
+        height=DEFAULT_HEIGHT,
         x=1100,
         y=80,
+        min_size=(MIN_WIDTH, MIN_HEIGHT),
+        resizable=True,
         frameless=True,
         on_top=True,
-        easy_drag=True,   # 无边框窗口可直接拖动
+        easy_drag=False,
         transparent=False,
     )
+    _WINDOW = window
+    window.events.loaded += _enable_frameless_resize
     webview.start()
 
 

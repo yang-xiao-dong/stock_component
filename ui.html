@@ -5,94 +5,159 @@
 <title>股价监控系统</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
-  html, body { background: transparent; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  html, body {
+    background: transparent;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+    height: 100%;
+  }
   body { padding: 8px; }
   #card {
     background: rgba(24, 26, 34, 0.92);
     border-radius: 12px;
-    padding: 12px 14px 10px;
+    padding: 10px 12px 8px;
     color: #dfe3ea;
     box-shadow: 0 4px 18px rgba(0,0,0,.45);
     border: 1px solid rgba(255,255,255,.08);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
   }
-  #drag { cursor: move; }
-  .header { display: flex; justify-content: space-between; align-items: baseline; }
-  .name { font-size: 13px; font-weight: 600; color: #aeb6c4; }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    cursor: move;
+    flex-shrink: 0;
+  }
+  .name { font-size: 13px; font-weight: 600; color: #aeb6c4; white-space: nowrap; }
   .name b { color: #e8ebf0; font-size: 14px; margin-right: 6px; }
-  .upd { font-size: 10px; color: #6b7382; }
-  .main { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 2px; }
+  .upd { font-size: 10px; color: #6b7382; flex-shrink: 0; margin-left: 8px; }
+  .main { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; flex-shrink: 0; }
   .price { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .chg { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chg { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .up { color: #ff5252; } .down { color: #26c281; } .flat { color: #aeb6c4; }
-  .status { font-size: 10px; margin-left: auto; color: #6b7382; }
-  canvas { width: 100%; height: 92px; display: block; margin-top: 4px; }
-  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .status { font-size: 10px; margin-left: auto; color: #6b7382; white-space: nowrap; }
+  canvas { width: 100%; height: 92px; flex: 1; min-height: 80px; display: block; margin-top: 4px; }
+  .tabs { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; }
   .tab { font-size: 10px; padding: 1px 7px; border-radius: 8px; cursor: pointer;
          color: #6b7382; background: transparent; }
   .tab.on { color: #e8ebf0; background: rgba(255,255,255,.12); }
   .grid {
     display: grid; grid-template-columns: repeat(5, 1fr);
     margin-top: 6px; gap: 2px 6px; font-size: 10px; text-align: center;
+    flex-shrink: 0;
   }
   .grid .k { color: #6b7382; font-size: 9px; }
   .grid .v { color: #c8cdd8; font-variant-numeric: tabular-nums; }
-  
-  /* 股票导航 */
+
   .stock-nav {
-    display: flex; justify-content: space-between; align-items: center; 
-    margin-bottom: 8px; padding: 6px 8px; background: rgba(255,255,255,.06); 
-    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 2px;
+    min-width: 0;
+    flex-shrink: 0;
+  }
+  .stock-swiper {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .stock-list {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    cursor: grab;
+  }
+  .stock-list::-webkit-scrollbar { display: none; }
+  .stock-list:active { cursor: grabbing; }
+  .stock-item {
+    flex: 0 0 auto;
+    background: rgba(255,255,255,.08);
+    color: #c8cdd8;
+    border: none;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .stock-item:hover { background: rgba(255,255,255,.16); color: #e8ebf0; }
+  .stock-item.active {
+    background: rgba(255,255,255,.22);
+    color: #fff;
+    font-weight: 600;
   }
   .nav-btn {
-    background: rgba(255,255,255,.1); color: #e8ebf0; border: none;
-    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;
-    transition: all 0.2s;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    background: rgba(255,255,255,.1);
+    color: #e8ebf0;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 22px;
+    text-align: center;
+    padding: 0;
   }
-  .nav-btn:hover { background: rgba(255,255,255,.2); transform: translateY(-1px); }
+  .nav-btn:hover { background: rgba(255,255,255,.22); }
   .stock-indicator {
-    color: #e8ebf0; font-size: 12px; font-weight: 500;
-    background: rgba(255,255,255,.1); padding: 4px 10px; border-radius: 6px;
+    flex-shrink: 0;
+    color: #aeb6c4;
+    font-size: 10px;
+    background: rgba(255,255,255,.08);
+    padding: 2px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
   }
-  .stock-selector {
-    background: rgba(255,255,255,.1); color: #e8ebf0; border: none;
-    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;
-    min-width: 100px;
+
+  .rz {
+    position: absolute;
+    z-index: 30;
+    background: transparent;
   }
-  .stock-selector:hover { background: rgba(255,255,255,.2); }
-  
-  /* 优化布局 */
-  .header-nav { display: flex; gap: 8px; align-items: center; }
+  .rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+  .rz-s { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+  .rz-w { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+  .rz-e { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+  .rz-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+  .rz-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+  .rz-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+  .rz-se {
+    right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize;
+  }
+  .rz-se i {
+    position: absolute;
+    right: 3px; bottom: 3px;
+    width: 8px; height: 8px;
+    border-right: 2px solid rgba(255,255,255,.4);
+    border-bottom: 2px solid rgba(255,255,255,.4);
+    border-radius: 1px;
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
 <div id="card">
-  <!-- 股票导航 -->
-  <div class="stock-nav">
-    <div class="header-nav">
-      <div id="drag" class="header">
-        <span class="name"><b id="name">瑞芯微</b><span id="code">603893.SH</span></span>
-        <span class="upd" id="upd">加载中…</span>
-      </div>
-    </div>
-    <div class="header-nav">
-      <button class="nav-btn" id="prevBtn">← 上一个</button>
-      <select class="stock-selector" id="stockSelector">
-        <option value="0">瑞芯微 603893</option>
-        <option value="1">兆易创新 603986</option>
-        <option value="2">翱捷科技-U 688082</option>
-        <option value="3">龙迅股份 688222</option>
-        <option value="4">中科蓝汛 688023</option>
-        <option value="5">乐鑫科技 688018</option>
-        <option value="6">晶晨股份 688099</option>
-        <option value="7">全志科技 300078</option>
-        <option value="8">恒玄科技 688608</option>
-        <option value="9">炬芯科技 688268</option>
-      </select>
-      <button class="nav-btn" id="nextBtn">下一个 →</button>
-    </div>
+  <div id="drag" class="header pywebview-drag-region">
+    <span class="name"><b id="name">瑞芯微</b><span id="code">603893.SH</span></span>
+    <span class="upd" id="upd">加载中…</span>
   </div>
-  
-  <!-- 主要信息 -->
+
+  <div class="stock-nav">
+    <button class="nav-btn" id="prevBtn" title="上一只">◀</button>
+    <div class="stock-swiper" id="stockSwiper">
+      <div class="stock-list" id="stockList"></div>
+    </div>
+    <button class="nav-btn" id="nextBtn" title="下一只">▶</button>
+    <div class="stock-indicator" id="stockIndicator">1 / 10</div>
+  </div>
+
   <div class="main">
     <span class="price flat" id="price">--</span>
     <span class="chg flat" id="chg">--</span>
@@ -102,11 +167,9 @@
       <span class="tab" id="tabK">日K</span>
     </span>
   </div>
-  
-  <!-- 图表 -->
+
   <canvas id="chart"></canvas>
-  
-  <!-- 底部信息网格 -->
+
   <div class="grid">
     <div><div class="k">今开</div><div class="v" id="open">--</div></div>
     <div><div class="k">最高</div><div class="v" id="high">--</div></div>
@@ -114,55 +177,100 @@
     <div><div class="k">成交量</div><div class="v" id="vol">--</div></div>
     <div><div class="k">成交额</div><div class="v" id="amt">--</div></div>
   </div>
+  <div class="rz rz-n" data-resize="n"></div>
+  <div class="rz rz-s" data-resize="s"></div>
+  <div class="rz rz-w" data-resize="w"></div>
+  <div class="rz rz-e" data-resize="e"></div>
+  <div class="rz rz-nw" data-resize="nw"></div>
+  <div class="rz rz-ne" data-resize="ne"></div>
+  <div class="rz rz-sw" data-resize="sw"></div>
+  <div class="rz rz-se" data-resize="se" title="拖动调整窗口大小"><i></i></div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
 let minuteCache = null, minuteAt = 0, klineCache = null, mode = 'min';
 let currentStockIndex = 0;
-const totalStocks = 10;
+let stocks = [];
+let lastRt = null;
 
-// 更新窗口标题
-function updateWindowTitle(name, code) {
-  document.title = `${name} ${code}`;
+const FALLBACK_STOCKS = [
+  { code: "sh603893", name: "瑞芯微" },
+  { code: "sh603986", name: "兆易创新" },
+  { code: "sh688082", name: "翱捷科技-U" },
+  { code: "sh688222", name: "龙迅股份" },
+  { code: "sh688023", name: "中科蓝汛" },
+  { code: "sh688018", name: "乐鑫科技" },
+  { code: "sh688099", name: "晶晨股份" },
+  { code: "sz300078", name: "全志科技" },
+  { code: "sh688608", name: "恒玄科技" },
+  { code: "sh688268", name: "炬芯科技" },
+];
+
+function api() {
+  return (window.pywebview && pywebview.api) ? pywebview.api : null;
+}
+
+function fmtCode(code) {
+  if (!code) return '--';
+  const raw = String(code);
+  if (raw.includes('.')) return raw.toUpperCase();
+  if (raw.startsWith('sh')) return raw.slice(2) + '.SH';
+  if (raw.startsWith('sz')) return raw.slice(2) + '.SZ';
+  return raw;
 }
 
 function cls(pct) { return pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'); }
 function fmtTime(t) { return t ? t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12,14) : ''; }
 
+function renderStockList() {
+  const list = $('stockList');
+  list.innerHTML = stocks.map((s, i) =>
+    `<button class="stock-item${i === currentStockIndex ? ' active' : ''}" data-index="${i}">${s.name}</button>`
+  ).join('');
+  $('stockIndicator').textContent = `${currentStockIndex + 1} / ${stocks.length}`;
+}
+
+function markActive() {
+  $('stockList').querySelectorAll('.stock-item').forEach((el, i) => {
+    el.classList.toggle('active', i === currentStockIndex);
+  });
+  $('stockIndicator').textContent = `${currentStockIndex + 1} / ${stocks.length}`;
+  scrollActiveIntoView();
+}
+
+function scrollActiveIntoView() {
+  const item = $('stockList').querySelector('.stock-item.active');
+  if (item) item.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+}
+
 function render(rt) {
-  if (!rt) { 
-    $('upd').textContent = '网络错误，重试中…'; 
-    console.error('Render error: No realtime data');
-    return; 
+  lastRt = rt || lastRt;
+  if (!rt) {
+    $('upd').textContent = '网络错误，重试中…';
+    return;
   }
-  
-  console.log('Rendering data:', rt);
-  
-  $('name').textContent = rt.name || '--';
-  $('price').textContent = rt.price ? rt.price.toFixed(2) : '--';
-  $('chg').textContent = rt.change !== undefined ? 
-    (rt.change > 0 ? '+' : '') + rt.change.toFixed(2) + '  ' + 
-    (rt.change_pct !== undefined ? (rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%' : '--') : '--';
+
+  $('name').textContent = rt.name || stocks[currentStockIndex]?.name || '--';
+  $('code').textContent = fmtCode(stocks[currentStockIndex]?.code || rt.code);
+  $('price').textContent = rt.price != null ? rt.price.toFixed(2) : '--';
+  const chg = rt.change != null ? ((rt.change > 0 ? '+' : '') + rt.change.toFixed(2)) : '--';
+  const pct = rt.change_pct != null ? ((rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%') : '';
+  $('chg').textContent = pct ? `${chg}  ${pct}` : chg;
   $('price').className = 'price ' + cls(rt.change_pct || 0);
   $('chg').className = 'chg ' + cls(rt.change_pct || 0);
-  $('open').textContent = rt.open ? rt.open.toFixed(2) : '--';
-  $('high').textContent = rt.high ? rt.high.toFixed(2) : '--';
-  $('low').textContent = rt.low ? rt.low.toFixed(2) : '--';
-  $('vol').textContent = rt.volume ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
-  $('amt').textContent = rt.amount ? rt.amount.toFixed(2) + '亿' : '--';
+  $('open').textContent = rt.open != null ? rt.open.toFixed(2) : '--';
+  $('high').textContent = rt.high != null ? rt.high.toFixed(2) : '--';
+  $('low').textContent = rt.low != null ? rt.low.toFixed(2) : '--';
+  $('vol').textContent = rt.volume != null ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
+  $('amt').textContent = rt.amount != null ? rt.amount.toFixed(2) + '亿' : '--';
   $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
-  
+
   const now = new Date(), mts = now.getHours()*60 + now.getMinutes();
   const trading = (now.getDay() >= 1 && now.getDay() <= 5) &&
-    (mts >= 570 && mts <= 690 || mts >= 780 && mts <= 900);
+    ((mts >= 570 && mts <= 690) || (mts >= 780 && mts <= 900));
   $('status').textContent = trading ? '● 交易中' : '已收盘';
-  
-  // 更新位置指示器
-  $('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
-  
-  // 更新窗口标题
-  updateWindowTitle(rt.name || '--', rt.code || '--');
+  document.title = `${rt.name || '--'} ${fmtCode(rt.code)}`;
 }
 
 function setupCanvas() {
@@ -175,29 +283,30 @@ function setupCanvas() {
 
 function drawChart(points, prevClose) {
   const { ctx, w, h } = setupCanvas();
+  ctx.clearRect(0, 0, w, h);
   if (!points || points.length < 2) return;
   const prices = points.map(p => p.price);
   let max = Math.max(...prices, prevClose), min = Math.min(...prices, prevClose);
   const pad = (max - min) * 0.1 || 0.1; max += pad; min -= pad;
-  const N = 242; // 全天分时槽位
+  const N = 242;
   const x = i => 2 + i / (N - 1) * (w - 4);
   const y = p => 6 + (max - p) / (max - min) * (h - 12);
 
-  // 网格
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {
     ctx.beginPath(); ctx.moveTo(0, h*f); ctx.lineTo(w, h*f); ctx.stroke();
   });
-  // 昨收基准线
   ctx.strokeStyle = 'rgba(255,255,255,.18)';
   ctx.setLineDash([3,3]); ctx.beginPath();
   ctx.moveTo(0, y(prevClose)); ctx.lineTo(w, y(prevClose)); ctx.stroke();
   ctx.setLineDash([]);
 
-  // 分时折线 + 填充
   const color = points[points.length-1].price >= prevClose ? '#ff5252' : '#26c281';
   ctx.beginPath();
-  points.forEach((p, i) => { const px = x(Math.min(i, N-1)); i ? ctx.lineTo(px, y(p.price)) : ctx.moveTo(px, y(p.price)); });
+  points.forEach((p, i) => {
+    const px = x(Math.min(i, N-1));
+    i ? ctx.lineTo(px, y(p.price)) : ctx.moveTo(px, y(p.price));
+  });
   ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.lineTo(x(Math.min(points.length-1, N-1)), h); ctx.lineTo(x(0), h); ctx.closePath();
   const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -207,6 +316,7 @@ function drawChart(points, prevClose) {
 
 function drawKline(bars) {
   const { ctx, w, h } = setupCanvas();
+  ctx.clearRect(0, 0, w, h);
   if (!bars || bars.length < 2) return;
   let max = -1e9, min = 1e9;
   bars.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
@@ -223,87 +333,157 @@ function drawKline(bars) {
     const cx = 2 + slot * (i + 0.5);
     const up = b.close >= b.open;
     const color = up ? '#ff5252' : '#26c281';
-    // 影线
     ctx.strokeStyle = color; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cx, y(b.high)); ctx.lineTo(cx, y(b.low)); ctx.stroke();
-    // 实体
     const yo = y(b.open), yc = y(b.close);
     ctx.fillStyle = color;
     ctx.fillRect(cx - bw/2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
   });
 }
 
+function redrawChart() {
+  const prevClose = (lastRt && (lastRt.prev_close || lastRt.open)) || 0;
+  if (mode === 'min' && minuteCache && lastRt) drawChart(minuteCache, prevClose);
+  else if (mode === 'k' && klineCache) drawKline(klineCache);
+  else setupCanvas();
+}
+
 async function refresh() {
+  const py = api();
+  if (!py) {
+    $('upd').textContent = '等待连接…';
+    return;
+  }
   try {
-    const rt = await pywebview.api.get_realtime();
+    const rt = await py.get_realtime();
     render(rt);
     if (rt && (!minuteCache || Date.now() - minuteAt > 60000)) {
-      minuteCache = await pywebview.api.get_minute_data();
+      minuteCache = await py.get_minute_data();
       minuteAt = Date.now();
     }
-    if (!klineCache) {
-      klineCache = await pywebview.api.get_kline();
+    if (!klineCache) klineCache = await py.get_kline();
+    lastRt = rt;
+    const prevClose = (rt && (rt.prev_close || rt.open)) || 0;
+    if (mode === 'min') {
+      if (minuteCache && rt) drawChart(minuteCache, prevClose);
+      else setupCanvas();
+    } else if (mode === 'k') {
+      if (klineCache) drawKline(klineCache);
+      else setupCanvas();
     }
-    // 修复：使用 prev_close 或 open 作为昨收价
-    const prevClose = rt.prev_close || rt.open || 0;
-    if (mode === 'min' && minuteCache && rt) drawChart(minuteCache, prevClose);
-    if (mode === 'k' && klineCache) drawKline(klineCache);
-  } catch (e) { 
-    $('upd').textContent = '连接失败…'; 
+  } catch (e) {
+    $('upd').textContent = '连接失败…';
     console.error('Refresh error:', e);
   }
 }
 
-// 股票切换功能
-function switchStock(index) {
-  currentStockIndex = index;
+async function switchStock(index) {
+  if (!stocks.length) return;
+  currentStockIndex = (index + stocks.length) % stocks.length;
   minuteCache = null;
   klineCache = null;
-  refresh();
+  markActive();
+  const s = stocks[currentStockIndex];
+  if (s) {
+    $('name').textContent = s.name;
+    $('code').textContent = fmtCode(s.code);
+    document.title = `${s.name} ${fmtCode(s.code)}`;
+  }
+  $('upd').textContent = '切换中…';
+  const py = api();
+  if (py && py.set_stock_index) {
+    try { await py.set_stock_index(currentStockIndex); } catch (e) { console.error(e); }
+  }
+  await refresh();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-  // 初始化位置指示器
-  document.getElementById('stockIndicator').textContent = `${currentStockIndex + 1} / ${totalStocks}`;
-  
-  // 上一个按钮
-  $('prevBtn').onclick = () => {
-    currentStockIndex = (currentStockIndex - 1 + totalStocks) % totalStocks;
-    $('stockSelector').value = currentStockIndex;
-    switchStock(currentStockIndex);
+function bindNav() {
+  const list = $('stockList');
+  $('prevBtn').onclick = () => switchStock(currentStockIndex - 1);
+  $('nextBtn').onclick = () => switchStock(currentStockIndex + 1);
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('.stock-item');
+    if (!btn) return;
+    switchStock(parseInt(btn.dataset.index, 10));
+  });
+  list.addEventListener('wheel', e => {
+    e.preventDefault();
+    list.scrollLeft += e.deltaY;
+  }, { passive: false });
+
+  $('tabMin').onclick = () => {
+    mode = 'min';
+    $('tabMin').classList.add('on');
+    $('tabK').classList.remove('on');
+    refresh();
   };
-  
-  // 下一个按钮
-  $('nextBtn').onclick = () => {
-    currentStockIndex = (currentStockIndex + 1) % totalStocks;
-    $('stockSelector').value = currentStockIndex;
-    switchStock(currentStockIndex);
+  $('tabK').onclick = () => {
+    mode = 'k';
+    $('tabK').classList.add('on');
+    $('tabMin').classList.remove('on');
+    refresh();
   };
-  
-  // 股票选择器
-  $('stockSelector').onchange = (e) => {
-    const newIndex = parseInt(e.target.value);
-    currentStockIndex = newIndex;
-    switchStock(currentStockIndex);
+}
+
+function bindResize() {
+  const dirs = {
+    n: {x:0,y:-1}, s:{x:0,y:1}, w:{x:-1,y:0}, e:{x:1,y:0},
+    nw:{x:-1,y:-1}, ne:{x:1,y:-1}, sw:{x:-1,y:1}, se:{x:1,y:1}
   };
-  
-  // 图表切换
-  $('tabMin').onclick = () => { 
-    mode = 'min'; 
-    $('tabMin').classList.add('on'); 
-    $('tabK').classList.remove('on'); 
-    refresh(); 
-  };
-  $('tabK').onclick = () => { 
-    mode = 'k'; 
-    $('tabK').classList.add('on'); 
-    $('tabMin').classList.remove('on'); 
-    refresh(); 
-  };
-  
-  // 初始刷新
-  refresh();
+  document.querySelectorAll('[data-resize]').forEach(el => {
+    el.addEventListener('pointerdown', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const py = api();
+      if (!py) return;
+      try {
+        if (py.start_resize && await py.start_resize(el.dataset.resize)) return;
+      } catch (err) { console.error(err); }
+      if (!py.resize_to || !py.get_window_size) return;
+      const dir = dirs[el.dataset.resize] || dirs.se;
+      const size = await py.get_window_size();
+      const sx = e.screenX, sy = e.screenY;
+      const w0 = size.width, h0 = size.height;
+      const move = ev => {
+        py.resize_to(w0 + dir.x * (ev.screenX - sx), h0 + dir.y * (ev.screenY - sy));
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+  });
+  window.addEventListener('resize', () => {
+    clearTimeout(bindResize._t);
+    bindResize._t = setTimeout(redrawChart, 40);
+  });
+}
+
+async function init() {
+  stocks = FALLBACK_STOCKS;
+  const py = api();
+  if (py && py.get_stocks) {
+    try {
+      const remote = await py.get_stocks();
+      if (Array.isArray(remote) && remote.length) stocks = remote;
+    } catch (e) { console.error(e); }
+  }
+  renderStockList();
+  bindNav();
+  bindResize();
+  await refresh();
   setInterval(refresh, 5000);
+}
+
+let started = false;
+document.addEventListener('DOMContentLoaded', () => {
+  if (!started) { started = true; init(); }
+});
+window.addEventListener('pywebviewready', () => {
+  if (!started) { started = true; init(); }
+  else refresh();
 });
 </script>
 </body>
