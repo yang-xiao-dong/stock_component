@@ -361,7 +361,7 @@ let started = false;
 document.addEventListener('DOMContentLoaded', () => {
   if (!started) { started = true; init(); }
 });
-window.addEventListener('pywebviewready', () => {
+whenBridgeReady(() => {
   if (!started) { started = true; init(); }
   else refresh();
 });

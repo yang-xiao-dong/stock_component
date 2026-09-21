@@ -21,16 +21,16 @@ STOCKS = [
 
 WEIGHT_MODE = "equal"  # equal=均分；预留 custom（读各股票 weight 字段）
 
-# 主窗口
+# 主窗口（外壳页上下堆叠组件，窗口内滚动）
+APP_TITLE = "股票小组件"
 WINDOW = {
     "width": 560,
-    "height": 460,
+    "height": 780,
     "x": 1100,
-    "y": 80,
-    "min": (420, 320),
-    "max": (1600, 1200),
+    "y": 60,
+    "min": (420, 480),
+    "max": (1600, 1600),
 }
-START_COMPONENT = "stock"
 
 # 后台刷新间隔（秒）
 REFRESH = {"realtime": 5, "minute": 60, "kline": 600}

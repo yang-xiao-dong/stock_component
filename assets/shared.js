@@ -1,10 +1,30 @@
-/* 公共前端工具：pywebview 桥接、格式化、Canvas 基础绘制、窗口缩放与视图切换。
-   页面需先引入本文件，再写自己的逻辑；页面需提供 redrawChart() 供窗口缩放后重绘。 */
+/* 公共前端工具：pywebview 桥接、格式化、Canvas 基础绘制、窗口缩放。
+   页面需先引入本文件，再写自己的逻辑；页面需提供 redrawChart() 供窗口缩放后重绘。
+   嵌入模式（被外壳 shell.html 以同源 iframe 加载）自动回退到父页面桥接。 */
 
 const $ = id => document.getElementById(id);
 
+const EMBEDDED = window.parent !== window;
+if (EMBEDDED) document.documentElement.classList.add('embedded');
+
 function api() {
-  return (window.pywebview && pywebview.api) ? pywebview.api : null;
+  if (window.pywebview && window.pywebview.api) return window.pywebview.api;
+  if (EMBEDDED && window.parent && window.parent.pywebview && window.parent.pywebview.api) {
+    return window.parent.pywebview.api;
+  }
+  return null;
+}
+
+/* 桥接就绪回调：已就绪立即执行；嵌入模式轮询父页面；独立打开监听 pywebviewready */
+function whenBridgeReady(cb) {
+  if (api()) { cb(); return; }
+  if (EMBEDDED) {
+    const timer = setInterval(() => {
+      if (api()) { clearInterval(timer); cb(); }
+    }, 250);
+    return;
+  }
+  window.addEventListener('pywebviewready', () => cb());
 }
 
 function cls(pct) { return pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'); }
@@ -101,7 +121,7 @@ function bindResize() {
   });
   window.addEventListener('resize', () => {
     clearTimeout(bindResize._t);
-    bindResize._t = setTimeout(redrawChart, 40);
+    if (typeof redrawChart === 'function') bindResize._t = setTimeout(redrawChart, 40);
   });
 }
 

@@ -106,6 +106,7 @@ class GroupApi:
 class GroupComponent(Component):
     id = "group"
     title = f"{GROUP_NAME} · 均分"
+    embed_height = 510
 
     def create_api(self, scheduler=None):
         return GroupApi(scheduler=scheduler)

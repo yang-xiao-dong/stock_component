@@ -15,7 +15,8 @@ from pathlib import Path
 
 import webview
 
-from config import START_COMPONENT, WINDOW
+from config import APP_TITLE, WINDOW
+from core import http_server
 from core.scheduler import Scheduler
 from core.window_utils import WindowControls
 
@@ -25,6 +26,7 @@ class Component:
     id = "component"
     title = "组件"
     ui = "ui.html"
+    embed_height = 420  # 嵌入外壳时的 iframe 高度（px）
 
     @property
     def ui_path(self):
@@ -79,14 +81,26 @@ class AppApi(WindowControls):
 
 
 def assemble(components):
-    """装配并启动单窗口应用：建窗 → 挂载组件 API → 起调度器 → 进入主循环"""
+    """装配并启动单窗口应用：本地静态服务 → 动态生成外壳页（上下堆叠组件，可滚动）
+    → 建窗 → 挂载组件 API → 起调度器 → 进入主循环"""
     scheduler = Scheduler()
     api = AppApi(components)
-    start = api._by_id.get(START_COMPONENT) or components[0]
+
+    # 按发现的组件生成外壳槽位（新增组件零改动出现在窗口里）
+    shell_tpl = (Path(__file__).parent.parent / "assets" / "shell.html").read_text(encoding="utf-8")
+    slots = "\n    ".join(
+        f'<iframe class="slot" style="height:{c.embed_height}px" src="/components/{c.id}/ui.html"></iframe>'
+        for c in components
+    )
+    shell_html = (shell_tpl
+                  .replace("<!-- COMPONENT SLOTS -->", slots)
+                  .replace("{{APP_TITLE}}", APP_TITLE))
+
+    _, base_url = http_server.start(extra_files={"/assets/shell.html": shell_html.encode("utf-8")})
 
     window = webview.create_window(
-        start.title,
-        start.ui_path,
+        APP_TITLE,
+        f"{base_url}/assets/shell.html",
         js_api=api,
         width=WINDOW["width"],
         height=WINDOW["height"],

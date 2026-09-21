@@ -115,6 +115,7 @@ class StockApi:
 class StockComponent(Component):
     id = "stock"
     title = "个股行情"
+    embed_height = 400
 
     def create_api(self, scheduler=None):
         return StockApi(scheduler=scheduler)

@@ -412,8 +412,8 @@ async function init() {
   bindResize();
   if (api()) {
     goLive();
-  } else {
-    // 稍等 pywebview 桥接；仍未连接则进入演示模式（浏览器预览）
+  } else if (!EMBEDDED) {
+    // 独立浏览器预览：稍等桥接，仍未连接则进入演示模式（嵌入模式由 whenBridgeReady 轮询）
     demoDelay = setTimeout(() => { if (!api()) startDemo(); }, 1200);
   }
 }
@@ -427,7 +427,7 @@ function goLive() {
 }
 
 document.addEventListener('DOMContentLoaded', () => init());
-window.addEventListener('pywebviewready', () => goLive());
+whenBridgeReady(() => goLive());
 </script>
 </body>
 </html>

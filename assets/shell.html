@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>股票小组件</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* 外壳：上下堆叠组件卡片，整体可滚动 */
+  html, body { height: 100%; }
+  body {
+    padding: 8px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,.15) transparent;
+  }
+  body::-webkit-scrollbar { width: 5px; }
+  body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 3px; }
+  .topbar {
+    display: flex;
+    align-items: center;
+    height: 20px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+    cursor: move;
+  }
+  .tb-title { font-size: 11px; font-weight: 600; color: #aeb6c4; }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 100%;
+  }
+  .slot { border: 0; width: 100%; display: block; }
+</style>
+</head>
+<body>
+  <div class="topbar pywebview-drag-region"><span class="tb-title">{{APP_TITLE}}</span></div>
+  <div class="stack pywebview-drag-region"><!-- COMPONENT SLOTS --></div>
+
+  <!-- 窗口级缩放手柄（组件卡片内的手柄在嵌入模式下已隐藏） -->
+  <div class="rz rz-n" data-resize="n"></div>
+  <div class="rz rz-s" data-resize="s"></div>
+  <div class="rz rz-w" data-resize="w"></div>
+  <div class="rz rz-e" data-resize="e"></div>
+  <div class="rz rz-nw" data-resize="nw"></div>
+  <div class="rz rz-ne" data-resize="ne"></div>
+  <div class="rz rz-sw" data-resize="sw"></div>
+  <div class="rz rz-se" data-resize="se" title="拖动调整窗口大小"><i></i></div>
+
+  <script src="shared.js"></script>
+  <script>bindResize();</script>
+</body>
+</html>

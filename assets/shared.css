@@ -52,6 +52,10 @@ canvas { width: 100%; flex: 1; min-height: 110px; display: block; margin-top: 4p
 .demo-tag { font-size: 9px; color: #ffd54f; background: rgba(255,213,79,.18);
             padding: 1px 5px; border-radius: 6px; margin-left: 6px; }
 
+/* iframe 嵌入模式：隐藏视图切换器与卡片级缩放手柄（由外壳统一处理） */
+html.embedded .vswitch { display: none; }
+html.embedded .rz { display: none; }
+
 /* 无边框窗口的拖边缩放手柄 */
 .rz { position: absolute; z-index: 30; background: transparent; }
 .rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
