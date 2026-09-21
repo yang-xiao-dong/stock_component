@@ -13,7 +13,7 @@ python app.py                         # 唯一入口
 python -m components.stock.component  # 组件1单独调试
 python -m components.group.component  # 组件2单独调试
 python tests/test_group_calc.py       # 单元测试（离线、无网络）
-python tests/gui_drag_test.py         # GUI 自动化（会移动真实鼠标，仅排查交互问题时用）
+python tests/gui_drag_test.py         # GUI 自动化（会移动真实鼠标；默认不运行，仅用户明确要求时用）
 pip install pywebview requests        # 依赖
 ```
 
@@ -44,8 +44,8 @@ app.py（薄入口：发现+装配）→ components/（组件，自动发现）�
 
 ## 测试与验证分工
 - 单元测试（tests/test_group_calc.py）必须通过后再交付；新增计算逻辑必须配套测试（合成数据、不依赖网络）
-- **界面与交互（显示、拖动、缩放、数据刷新）由用户手动验证，不要替用户做可视化验证**
-- 改动完成后重启 `python app.py` 交由用户验证
+- **窗口拖动、缩放等交互操作与一切界面/交互验证由用户手动进行，不要替用户做**；不要主动运行真实鼠标自动化（gui_drag_test.py），除非用户明确要求
+- 改动完成后重启 `python app.py` 交由用户验证，等用户确认结果
 
 ## Git 约定
 - **每次重构、每个新功能、每个修复 = 一个独立提交；不要把多个不相关改动揉进一次提交**
