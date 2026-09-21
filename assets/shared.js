@@ -77,18 +77,18 @@ function strokeSeries(ctx, pts, color, width, alpha) {
   ctx.restore();
 }
 
-/* 「均分」图例（白色加粗线） */
-function drawAvgLegend(ctx, x, y) {
+/* 白色加粗线图例（组合/均分等主线说明） */
+function drawLineLegend(ctx, x, y, label) {
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.8;
   ctx.beginPath(); ctx.moveTo(x, y - 3); ctx.lineTo(x + 10, y - 3); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.75)';
   ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('均分', x + 13, y);
+  ctx.fillText(label, x + 13, y);
 }
 
-/* ---------- 窗口缩放（拖边原生缩放 + 程序化回退） ---------- */
-
+/* ---------- 窗口缩放（程序化：pointermove 逐步 resize_to） ----------
+   不用原生 WM 消息：桥接函数在 worker 线程执行，跨线程进不了系统缩放循环。 */
 function bindResize() {
   const dirs = {
     n: {x:0,y:-1}, s:{x:0,y:1}, w:{x:-1,y:0}, e:{x:1,y:0},
@@ -96,27 +96,27 @@ function bindResize() {
   };
   document.querySelectorAll('[data-resize]').forEach(el => {
     el.addEventListener('pointerdown', async e => {
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       const py = api();
-      if (!py) return;
-      try {
-        if (py.start_resize && await py.start_resize(el.dataset.resize)) return;
-      } catch (err) { console.error(err); }
-      if (!py.resize_to || !py.get_window_size) return;
+      if (!py || !py.get_window_size || !py.resize_to) return;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
       const dir = dirs[el.dataset.resize] || dirs.se;
       const size = await py.get_window_size();
-      const sx = e.screenX, sy = e.screenY;
+      if (!size || !size.width) return;
+      const cx = e.clientX, cy = e.clientY;
       const w0 = size.width, h0 = size.height;
       const move = ev => {
-        py.resize_to(w0 + dir.x * (ev.screenX - sx), h0 + dir.y * (ev.screenY - sy));
+        py.resize_to(w0 + dir.x * (ev.clientX - cx), h0 + dir.y * (ev.clientY - cy));
       };
-      const up = () => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
+      const up = ev => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
       };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
     });
   });
   window.addEventListener('resize', () => {
@@ -124,6 +124,36 @@ function bindResize() {
     if (typeof redrawChart === 'function') bindResize._t = setTimeout(redrawChart, 40);
   });
 }
+
+/* ---------- 窗口移动（嵌入模式，程序化） ----------
+   pywebview 的拖动区机制只在顶层文档生效；被外壳嵌入时，组件卡片标题栏的
+   按下事件转为程序化窗口移动（pointermove 逐步 move_to，绝对坐标）。
+   独立打开时由 pywebview 内置机制处理。 */
+function forwardWindowMove() {
+  if (!EMBEDDED) return;
+  document.querySelectorAll('.pywebview-drag-region').forEach(el => {
+    el.addEventListener('pointerdown', async e => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, .tab, .vs, a, input, .nav-btn, .stock-item')) return;
+      const py = api();
+      if (!py || !py.get_window_pos || !py.move_to) return;
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      const p0 = await py.get_window_pos();
+      if (!p0 || p0.x == null) return;
+      const cx = e.clientX, cy = e.clientY;
+      const move = ev => { py.move_to(p0.x + ev.clientX - cx, p0.y + ev.clientY - cy); };
+      const up = ev => {
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', forwardWindowMove);
 
 /* ---------- 「个股 | 组合」视图切换 ---------- */
 

@@ -19,20 +19,19 @@
   .contrib-list::-webkit-scrollbar { width: 4px; }
   .contrib-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
   .crow {
-    display: grid; grid-template-columns: 8px 1fr 46px 56px;
+    display: grid; grid-template-columns: 8px 1fr 74px 78px;
     align-items: center; gap: 6px; font-size: 10px; padding: 1.5px 0;
     font-variant-numeric: tabular-nums;
   }
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .cname { color: #c8cdd8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cw { color: #6b7382; text-align: right; }
   .cc { text-align: right; }
 </style>
 </head>
 <body>
 <div id="card">
   <div id="drag" class="header pywebview-drag-region">
-    <span class="name"><b id="gname">股票组合</b><span class="gtag" id="wtag">均分权重</span><span class="demo-tag" id="demoTag" style="display:none">演示数据</span></span>
+    <span class="name"><b id="gname">股票组合</b><span class="gtag" id="wtag">均分建仓</span><span class="demo-tag" id="demoTag" style="display:none">演示数据</span></span>
     <span class="upd" id="upd">加载中…</span>
   </div>
 
@@ -54,7 +53,7 @@
 
   <div class="contrib">
     <div class="contrib-head">
-      <span>贡献分解（当日 · 权重均分）</span>
+      <span id="chead">持仓盈亏（当日 / 累计 · 均分建仓）</span>
       <span id="ctotal">合计 --</span>
     </div>
     <div class="contrib-list" id="contribList"></div>
@@ -72,12 +71,14 @@
 
 <script src="../../assets/shared.js"></script>
 <script>
-/* 组合视图逻辑（工具函数见 shared.js） */
+/* 组合视图逻辑（工具函数见 shared.js）
+   口径：¥ 为绝对度量；百分比相对建仓本金。 */
 let mode = 'min';
 let minuteCache = null, minuteAt = 0, klineCache = null, klineAt = 0;
 let stocks = [], codeColor = {};
 let liveTimer = 0, demoTimer = 0, demoDelay = 0, isDemo = false;
-let demoM = null, demoK = null;
+let demoM = null, demoK = null, demoLines = null;
+const DEMO_PRINCIPAL = 100000, DEMO_PER = DEMO_PRINCIPAL / 10;
 
 const FALLBACK_GROUP = [
   { code: "sh603893", name: "瑞芯微" },
@@ -99,45 +100,68 @@ function buildColorMap() {
   stocks.forEach((s, i) => { codeColor[s.code] = PALETTE[i % PALETTE.length]; });
 }
 
-/* ---------------- 渲染：头部 + 贡献分解 ---------------- */
+/* ---------------- ¥ 格式化 ---------------- */
+
+function fmtY(v, sign) {
+  if (v == null || isNaN(v)) return '--';
+  const s = Math.abs(v).toLocaleString('zh-CN',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (sign && v > 0 ? '+' : '') + (v < 0 ? '-' : '') + '¥' + s;
+}
+function fmtYInt(v) {
+  if (v == null || isNaN(v)) return '--';
+  return '¥' + Math.round(v).toLocaleString('zh-CN');
+}
+/* 轴刻度：万以上缩写 */
+function fmtWan(v) {
+  const a = Math.abs(v);
+  return (v < 0 ? '-' : '') + (a >= 10000 ? (a / 10000).toFixed(1) + '万' : String(Math.round(a)));
+}
+function pctStr(p) { return p == null ? '' : '（' + (p > 0 ? '+' : '') + p.toFixed(2) + '%）'; }
+
+/* ---------------- 渲染：头部 + 盈亏分解 ---------------- */
 
 function renderRt(rt) {
-  if (!rt) { $('upd').textContent = '网络错误，重试中…'; return; }
-  $('gpct').textContent = fmtPct(rt.change_pct);
-  $('gpct').className = 'price ' + cls(rt.change_pct || 0);
-  $('cnt').textContent = `涨${rt.up} 跌${rt.down}` + (rt.flat ? ` 平${rt.flat}` : '');
+  if (!rt) { $('upd').textContent = '数据加载中…'; return; }
+  const day = rt.day_pnl, cum = rt.total_pnl, pct = rt.total_pct;
+
+  $('gpct').textContent = fmtY(day, true);
+  $('gpct').className = 'price ' + cls(day || 0);
+  $('cnt').textContent = `总值 ${fmtYInt(rt.total_value)}｜累计 ${fmtY(cum, true)}${pctStr(pct)}`;
   $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
   $('status').textContent = isTrading() ? '● 交易中' : '已收盘';
+  $('chead').textContent = `持仓盈亏（当日 / 累计 · 本金 ${fmtYInt(rt.principal)} 均分建仓）`;
 
   const rows = rt.stocks || [];
   $('contribList').innerHTML = rows.map(r => {
     const color = codeColor[r.code] || '#8892a6';
-    const c = r.contribution || 0;
     return `<div class="crow">
       <i class="dot" style="background:${color}"></i>
       <span class="cname" title="${r.name}">${r.name}</span>
-      <span class="cw">${r.weight.toFixed(1)}%</span>
-      <span class="cc ${cls(c)}">${(c > 0 ? '+' : '') + c.toFixed(2)}%</span>
+      <span class="cc ${cls(r.day_pnl || 0)}">${fmtY(r.day_pnl, true)}</span>
+      <span class="cc ${cls(r.total_pnl == null ? 0 : r.total_pnl)}">${r.total_pnl == null ? '--' : fmtY(r.total_pnl, true)}</span>
     </div>`;
   }).join('');
-  $('ctotal').innerHTML = `合计 <b class="${cls(rt.change_pct)}">${fmtPct(rt.change_pct)}</b>`;
+  $('ctotal').innerHTML =
+    `当日 <b class="${cls(day || 0)}">${fmtY(day, true)}</b> · ` +
+    `累计 <b class="${cls(cum == null ? 0 : cum)}">${cum == null ? '--' : fmtY(cum, true)}${pctStr(pct)}</b>`;
 }
 
 /* ---------------- 绘图 ---------------- */
 
-/* 分时：个股细线（%相对昨收）+ 均分加粗线 + 0轴 */
+/* 分时（当日盈亏 ¥）：个股细线 + 组合合计加粗线 + 0轴 */
 function drawMinute(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!data || !data.times || data.times.length < 2 || !data.stocks) return;
 
-  const PR = 36, PT = 10, PB = 14;
+  const PR = 48, PT = 10, PB = 14;
   const all = [];
   data.stocks.forEach(s => s.data.forEach(v => { if (v != null) all.push(v); }));
-  (data.avg || []).forEach(v => { if (v != null) all.push(v); });
+  (data.total || []).forEach(v => { if (v != null) all.push(v); });
   if (!all.length) return;
   let max = Math.max(...all, 0), min = Math.min(...all, 0);
-  const pad = (max - min) * 0.12 || 0.2; max += pad; min -= pad;
+  const pad = (max - min) * 0.12 || 10; max += pad; min -= pad;
   const umax = max - pad, umin = min + pad;
 
   const N = data.times.length, cw = w - PR;
@@ -151,20 +175,20 @@ function drawMinute(data) {
   ctx.beginPath(); ctx.moveTo(0, y(0)); ctx.lineTo(cw, y(0)); ctx.stroke();
   ctx.setLineDash([]);
 
-  // 个股细线
+  // 个股当日盈亏细线
   data.stocks.forEach(s => {
     const color = codeColor[s.code]; if (!color) return;
     strokeSeries(ctx, s.data.map((v, i) => [x(i), v == null ? null : y(v)]), color, 1, 0.5);
   });
 
-  // 均分线 + 相对0轴的柔和填充
-  const avg = data.avg || [];
+  // 组合合计线 + 相对0轴的柔和填充
+  const total = data.total || [];
   let first = -1, last = -1;
-  avg.forEach((v, i) => { if (v != null) { if (first < 0) first = i; last = i; } });
+  total.forEach((v, i) => { if (v != null) { if (first < 0) first = i; last = i; } });
   if (first >= 0) {
     ctx.beginPath();
     let started = false;
-    avg.forEach((v, i) => {
+    total.forEach((v, i) => {
       if (v == null) return;
       if (!started) { ctx.moveTo(x(i), y(v)); started = true; } else ctx.lineTo(x(i), y(v));
     });
@@ -172,34 +196,35 @@ function drawMinute(data) {
     const g = ctx.createLinearGradient(0, PT, 0, h - PB);
     g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(1, 'rgba(255,255,255,.02)');
     ctx.fillStyle = g; ctx.fill();
-    strokeSeries(ctx, avg.map((v, i) => [x(i), v == null ? null : y(v)]), '#ffffff', 1.8, 0.95);
+    strokeSeries(ctx, total.map((v, i) => [x(i), v == null ? null : y(v)]), '#ffffff', 1.8, 0.95);
   }
-  drawAvgLegend(ctx, 6, PT + 7);
+  drawLineLegend(ctx, 6, PT + 7, '组合');
 
-  // 轴标签
+  // 轴标签（元）
   ctx.fillStyle = '#6b7382'; ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
   ctx.textAlign = 'left';
-  const lbl = v => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
-  ctx.fillText(lbl(umax), cw + 4, y(umax) + 3);
-  ctx.fillText(lbl(0), cw + 4, y(0) + 3);
-  ctx.fillText(lbl(umin), cw + 4, y(umin) + 3);
+  ctx.fillText((umax > 0 ? '+' : '') + fmtWan(umax), cw + 4, y(umax) + 3);
+  ctx.fillText('0', cw + 4, y(0) + 3);
+  ctx.fillText(fmtWan(umin), cw + 4, y(umin) + 3);
   ctx.fillText(data.times[0], 2, h - 3);
   ctx.textAlign = 'right'; ctx.fillText(data.times[N - 1], cw - 2, h - 3);
   ctx.textAlign = 'left';
 }
 
-/* 日K：均分指数蜡烛 + 个股归一细线（基准100） */
+/* 日K（市值 ¥）：组合市值蜡烛 + 个股持市值细线 + 本金基准线 */
 function drawK(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!data || !data.candles || data.candles.length < 2) return;
 
-  const PR = 40, PT = 10, PB = 14;
+  const PR = 48, PT = 10, PB = 14;
   let max = -1e9, min = 1e9;
   data.candles.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
   (data.stocks || []).forEach(s => s.data.forEach(v => {
     if (v != null) { max = Math.max(max, v); min = Math.min(min, v); }
   }));
+  const C = data.principal;
+  if (C != null) { max = Math.max(max, C); min = Math.min(min, C); }
   const pad = (max - min) * 0.08 || 1; max += pad; min -= pad;
 
   const n = data.dates.length, cw = w - PR;
@@ -208,13 +233,18 @@ function drawK(data) {
 
   hgrid(ctx, cw, h, PT, PB);
 
-  // 基准100虚线
-  if (100 > min && 100 < max) {
-    ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.moveTo(0, y(100)); ctx.lineTo(cw, y(100)); ctx.stroke();
+  // 本金基准虚线
+  if (C != null && C > min && C < max) {
+    ctx.strokeStyle = 'rgba(255,213,79,.4)'; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(0, y(C)); ctx.lineTo(cw, y(C)); ctx.stroke();
     ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,213,79,.8)';
+    ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('本金', 2, y(C) - 2);
   }
 
+  // 个股持市值细线
   (data.stocks || []).forEach(s => {
     const color = codeColor[s.code]; if (!color) return;
     strokeSeries(ctx, s.data.map((v, i) => [x(i), v == null ? null : y(v)]), color, 1, 0.45);
@@ -232,14 +262,13 @@ function drawK(data) {
     ctx.fillStyle = color;
     ctx.fillRect(cx - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
   });
-  drawAvgLegend(ctx, 6, PT + 7);
+  drawLineLegend(ctx, 6, PT + 7, '组合');
 
   ctx.fillStyle = '#6b7382'; ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
   ctx.textAlign = 'left';
-  const fmt = v => String(Math.round(v));
-  ctx.fillText(fmt(max - pad), cw + 4, y(max - pad) + 3);
-  ctx.fillText(fmt((max + min) / 2), cw + 4, y((max + min) / 2) + 3);
-  ctx.fillText(fmt(min + pad), cw + 4, y(min + pad) + 3);
+  ctx.fillText(fmtWan(max - pad), cw + 4, y(max - pad) + 3);
+  ctx.fillText(fmtWan((max + min) / 2), cw + 4, y((max + min) / 2) + 3);
+  ctx.fillText(fmtWan(min + pad), cw + 4, y(min + pad) + 3);
   const dl = s => s && s.length >= 5 ? s.slice(5) : (s || '');
   ctx.fillText(dl(data.dates[0]), 2, h - 3);
   ctx.textAlign = 'right'; ctx.fillText(dl(data.dates[n - 1]), cw - 2, h - 3);
@@ -283,7 +312,7 @@ function clearCaches() {
   minuteCache = null; minuteAt = 0; klineCache = null; klineAt = 0;
 }
 
-/* ---------------- 演示模式（无 pywebview 环境预览用） ---------------- */
+/* ---------------- 演示模式（无 pywebview 环境预览用，¥口径） ---------------- */
 
 function demoWalk(n, vol, drift) {
   const a = []; let v = 0;
@@ -301,71 +330,74 @@ function lastDates(n) {
 }
 
 function buildDemo() {
-  demoM = { times: [], avg: [], stocks: FALLBACK_GROUP.map(s => ({ code: s.code, data: [] })) };
+  // 分时：各股当日盈亏 ¥ 随机游走
+  demoM = { times: [], total: [], stocks: FALLBACK_GROUP.map(s => ({ code: s.code, data: [] })) };
   for (let m = 570; m <= 900; m++) {
     if (m > 690 && m < 780) continue;
     demoM.times.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
   }
-  const walks = FALLBACK_GROUP.map(() => demoWalk(demoM.times.length, 0.5, (Math.random() - 0.5) * 0.015));
+  const walks = FALLBACK_GROUP.map(() => demoWalk(demoM.times.length, 90, (Math.random() - 0.5) * 0.5));
   walks.forEach((w, i) => demoM.stocks[i].data = w);
-  recomputeDemoAvg();
+  recomputeDemoTotal();
 
+  // 日K：各股持市值 ¥ 从每份本金出发漂移
   const ND = 60, dates = lastDates(ND);
-  const lines = FALLBACK_GROUP.map(() => {
-    let v = 100; const data = [];
-    for (let i = 0; i < ND; i++) { v *= 1 + (Math.random() - 0.5) * 0.05; data.push(v); }
-    return data;
+  demoLines = FALLBACK_GROUP.map(() => {
+    let v = DEMO_PER; const d = [];
+    for (let i = 0; i < ND; i++) { v *= 1 + (Math.random() - 0.5) * 0.05; d.push(v); }
+    return d;
   });
-  const avgC = [];
-  for (let i = 0; i < ND; i++) avgC.push(lines.reduce((s, l) => s + l[i], 0) / FALLBACK_GROUP.length);
+  const tot = [];
+  for (let i = 0; i < ND; i++) tot.push(demoLines.reduce((s, l) => s + l[i], 0));
   demoK = {
+    principal: DEMO_PRINCIPAL,
     dates,
-    candles: avgC.map((c, i) => {
-      const prev = i ? avgC[i - 1] : 100;
-      const o = prev * (1 + (Math.random() - 0.5) * 0.01);
+    candles: tot.map((c, i) => {
+      const p = i ? tot[i - 1] : DEMO_PRINCIPAL;
+      const o = p * (1 + (Math.random() - 0.5) * 0.01);
       return {
         date: dates[i], open: o, close: c,
         high: Math.max(o, c) * (1 + Math.random() * 0.008),
         low: Math.min(o, c) * (1 - Math.random() * 0.008),
       };
     }),
-    stocks: FALLBACK_GROUP.map((s, i) => ({ code: s.code, data: lines[i] })),
+    stocks: FALLBACK_GROUP.map((s, i) => ({ code: s.code, data: demoLines[i] })),
   };
 }
 
-function recomputeDemoAvg() {
-  const n = demoM.times.length;
-  demoM.avg = [];
-  for (let i = 0; i < n; i++) {
+function recomputeDemoTotal() {
+  demoM.total = demoM.times.map((_, i) => {
     let sum = 0, c = 0;
     demoM.stocks.forEach(s => { const v = s.data[i]; if (v != null) { sum += v; c++; } });
-    demoM.avg.push(c ? sum / c : null);
-  }
+    return c ? sum : null;
+  });
 }
 
 function demoRt() {
-  const NS = FALLBACK_GROUP.length;
   const rows = FALLBACK_GROUP.map((s, i) => {
-    const data = demoM.stocks[i].data;
-    const pct = data[data.length - 1] || 0;
-    return { code: s.code, name: s.name, change_pct: pct,
-             weight: 100 / NS, contribution: pct / NS };
-  }).sort((a, b) => b.contribution - a.contribution);
-  const total = rows.reduce((s, r) => s + r.contribution, 0);
-  const up = rows.filter(r => r.change_pct > 0).length;
-  const down = rows.filter(r => r.change_pct < 0).length;
+    const day = demoM.stocks[i].data[demoM.times.length - 1] || 0;
+    const value = demoLines[i][demoLines[i].length - 1];
+    return { code: s.code, name: s.name, change_pct: day / DEMO_PER * 100,
+             day_pnl: day, value, total_pnl: value - DEMO_PER };
+  }).sort((a, b) => b.day_pnl - a.day_pnl);
+  const day_pnl = rows.reduce((s, r) => s + r.day_pnl, 0);
+  const total_value = rows.reduce((s, r) => s + r.value, 0);
+  const total_pnl = total_value - DEMO_PRINCIPAL;
   const d = new Date();
   const time = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}${String(d.getSeconds()).padStart(2,'0')}`;
-  return { time, change_pct: total, up, down, flat: rows.length - up - down, stocks: rows };
+  return { time, principal: DEMO_PRINCIPAL, day_pnl, total_value, total_pnl,
+           total_pct: total_pnl / DEMO_PRINCIPAL * 100,
+           up: rows.filter(r => r.change_pct > 0).length,
+           down: rows.filter(r => r.change_pct < 0).length, stocks: rows };
 }
 
 function demoTick() {
   demoM.stocks.forEach(s => {
     const last = s.data[s.data.length - 1] || 0;
-    if (s.data.length < demoM.times.length) s.data.push(last + (Math.random() - 0.5) * 0.4);
-    else s.data[s.data.length - 1] = last + (Math.random() - 0.5) * 0.15;
+    if (s.data.length < demoM.times.length) s.data.push(last + (Math.random() - 0.5) * 60);
+    else s.data[s.data.length - 1] = last + (Math.random() - 0.5) * 25;
   });
-  recomputeDemoAvg();
+  recomputeDemoTotal();
   renderRt(demoRt());
   redrawChart();
 }

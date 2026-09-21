@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""组件2：股票组合视图 — 组内股票均分(等权)的分时/日K聚合 + 贡献分解
+"""组件2：股票组合视图 — 本金均分建仓，¥绝对度量（市值/当日/累计盈亏）+ 盈亏分解
 
+口径：比例相对建仓本金，人民币金额为绝对度量（见 core/group_calc.py）。
 单独调试（项目根目录下运行）：python -m components.group.component
 """
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from components.base import Component, assemble
-from config import KLINE_DAYS, REFRESH, GROUP_NAME, STOCKS
+from config import GROUP_NAME, KLINE_DAYS, PRINCIPAL, REFRESH, STOCKS
 from core import group_calc, stock_api
 
 FETCH_WORKERS = 4  # 并发抓取分时/日K的线程数
@@ -20,8 +20,10 @@ class GroupApi:
     def __init__(self, scheduler=None):
         self._lock = threading.Lock()
         self._realtime = {}   # {code: rt}
-        self._minute = None   # build_group_minute 结果
-        self._kline = None    # build_group_kline 结果
+        self._minute = None   # build_group_minute 结果（¥）
+        self._kline = None    # build_group_kline 结果（¥）
+        self._shares = None   # 建仓份额 {code: shares}（日K窗口首日开盘价均分买入）
+        self._entry = None    # 建仓价 {code: price}
 
         self.refresh_realtime()
         if scheduler:
@@ -46,7 +48,13 @@ class GroupApi:
             return
         with self._lock:
             prev = {c: (self._realtime.get(c) or {}).get("prev_close") for c in minute_map}
-            self._minute = group_calc.build_group_minute(minute_map, prev)
+            shares = dict(self._shares) if self._shares else None
+        prev = {c: p for c, p in prev.items() if p}
+        if not prev:
+            return
+        minute = group_calc.build_group_minute(minute_map, prev, shares, PRINCIPAL)
+        with self._lock:
+            self._minute = minute
 
     def refresh_kline(self):
         codes = [s["code"] for s in STOCKS]
@@ -55,35 +63,40 @@ class GroupApi:
         kmap = {c: v for c, v in fetched.items() if v}
         if not kmap:
             return
+        data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
+        entry = {c: bars[0]["open"] for c, bars in kmap.items() if bars}
         with self._lock:
-            self._kline = group_calc.build_group_kline(kmap, max_points=KLINE_DAYS)
+            self._kline = data
+            self._shares = data["shares"]
+            self._entry = entry
 
     # ---------- JS 接口 ----------
 
     def get_group(self):
         """组合元信息"""
-        return {"name": GROUP_NAME, "mode": "equal", "count": len(STOCKS), "stocks": STOCKS}
+        return {"name": GROUP_NAME, "mode": "equal", "count": len(STOCKS),
+                "principal": PRINCIPAL, "stocks": STOCKS}
 
     def get_group_realtime(self):
-        """组合实时概览：均分合计涨跌幅 + 涨跌家数 + 贡献分解"""
+        """组合实时概览：当日/累计盈亏(¥)、总市值、个股盈亏分解"""
         with self._lock:
             rt = dict(self._realtime)
-        rows, total = group_calc.build_contribution(rt)
-        up = sum(1 for r in rows if r["change_pct"] > 0)
-        down = sum(1 for r in rows if r["change_pct"] < 0)
+            shares = dict(self._shares) if self._shares else None
+            entry = dict(self._entry) if self._entry else None
+        rows, total = group_calc.build_contribution(rt, shares, entry, PRINCIPAL)
+        if total is None:
+            return None
         latest = ""
         for v in rt.values():
             if v and v.get("time") and v["time"] > latest:
                 latest = v["time"]
-        return {
-            "time": latest,
-            "change_pct": total,
-            "up": up, "down": down, "flat": len(rows) - up - down,
-            "stocks": rows,
-        }
+        out = dict(total)
+        out["time"] = latest
+        out["stocks"] = rows
+        return out
 
     def get_group_minute(self):
-        """组内分时（均分平均%，含个股线）"""
+        """组内分时（各股当日盈亏¥ + 组合合计¥）"""
         with self._lock:
             data = self._minute
         if not data:
@@ -93,7 +106,7 @@ class GroupApi:
         return data
 
     def get_group_kline(self):
-        """组内日K（均分指数蜡烛 + 个股归一线）"""
+        """组内日K（组合市值¥蜡烛 + 个股持市值¥线）"""
         with self._lock:
             data = self._kline
         if not data:

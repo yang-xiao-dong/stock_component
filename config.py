@@ -21,6 +21,10 @@ STOCKS = [
 
 WEIGHT_MODE = "equal"  # equal=均分；预留 custom（读各股票 weight 字段）
 
+# 组合本金（元）：均分建仓于日K窗口首日开盘价、持有不动。
+# 组合组件中所有 ¥ 金额都是绝对度量，百分比一律相对该本金。
+PRINCIPAL = 100000.0
+
 # 主窗口（外壳页上下堆叠组件，窗口内滚动）
 APP_TITLE = "股票小组件"
 WINDOW = {
