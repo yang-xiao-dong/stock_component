@@ -8,7 +8,9 @@ import http.server
 import os
 import threading
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from core.runtime_paths import resource_path
+
+_ROOT = str(resource_path())
 _ALLOWED_PREFIXES = ("/assets/", "/components/")
 
 

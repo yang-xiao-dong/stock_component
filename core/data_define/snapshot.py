@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from core.runtime_paths import user_data_path
+
 from .common import Contract
 from .kline import KlineBar
 from .minute import MinutePoint
@@ -25,8 +27,7 @@ from .quote import RealtimeQuote
 
 SNAPSHOT_VERSION = 1
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SNAPSHOT_DIR = os.path.join(_ROOT, "data", "snapshots")
+SNAPSHOT_DIR = str(user_data_path("data", "snapshots"))
 
 
 @dataclass

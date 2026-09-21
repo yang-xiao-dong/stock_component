@@ -9,14 +9,13 @@
 - 组件 API 类只管数据与业务，不继承窗口控制（窗口由装配层统一提供）
 - 组件 API 的公共方法在装配时挂到窗口 JS 接口上，重名冲突启动即报错
 """
-import inspect
-import os
 from pathlib import Path
 
 import webview
 
 from config import APP_TITLE, AUTO_SNAPSHOT, WINDOW
 from core import data_source, http_server
+from core.runtime_paths import resource_path
 from core.scheduler import Scheduler
 from core.window_utils import WindowControls
 
@@ -30,9 +29,8 @@ class Component:
 
     @property
     def ui_path(self):
-        # 界面文件与组件类同目录
-        return os.path.join(
-            os.path.dirname(os.path.abspath(inspect.getfile(type(self)))), self.ui)
+        # 打包后资源位于临时解包目录；开发时仍指向项目组件目录。
+        return str(resource_path("components", self.id, self.ui))
 
     def create_api(self, scheduler=None):
         """创建该组件的前端 API 对象；scheduler 用于注册后台刷新任务"""
@@ -103,7 +101,7 @@ def assemble(components):
     api = AppApi(components)
 
     # 按发现的组件生成外壳槽位（新增组件零改动出现在窗口里）
-    shell_tpl = (Path(__file__).parent.parent / "assets" / "shell.html").read_text(encoding="utf-8")
+    shell_tpl = resource_path("assets", "shell.html").read_text(encoding="utf-8")
     slots = "\n    ".join(
         f'<iframe class="slot" style="height:{c.embed_height}px" src="/components/{c.id}/ui.html"></iframe>'
         for c in components

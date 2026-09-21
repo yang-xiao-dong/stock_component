@@ -12,3 +12,8 @@ venv/
 
 # 本地数据（收盘快照等）
 data/
+
+# 打包中间文件与产物（发布时直接分发 dist/*.exe）
+build/
+dist/
+*.spec

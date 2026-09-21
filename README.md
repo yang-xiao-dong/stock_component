@@ -9,6 +9,24 @@ pip install pywebview requests
 python app.py        # 唯一入口
 ```
 
+## 打包与发布
+
+项目内置 `builder` 模块，可生成无需安装 Python 的 Windows 单文件 EXE：
+
+```bash
+pip install pyinstaller
+python -m builder
+```
+
+版本号统一维护在 `version.py`。默认产物为 `dist/股票小组件-v<版本>.exe`，可直接传给其他人使用；也可临时指定发布版本与输出目录：
+
+```bash
+python -m builder --version 1.1.0
+python -m builder --dist-dir D:\release
+```
+
+打包器会自动发现并收集 `components/` 下的组件及其界面资源。EXE 保存的快照位于 `%LOCALAPPDATA%\StockWidget\data\snapshots`，升级或移动 EXE 不会丢失。目标电脑需为 Windows 10/11，并具备 Microsoft Edge WebView2 Runtime（通常已随系统安装）。
+
 - **个股组件**：组内股票滑动/滚轮/点击切换，实时行情 + 分时 + 日K，5秒刷新
 - **组合组件**：以本金为锚（¥ 为绝对度量，% 相对本金）——本金均分建仓于K线窗口首日、持有不动；组合分时（各股当日盈亏¥细线 + 组合合计¥）、组合日K（市值¥蜡烛 + 本金基准线）、持仓盈亏分解（当日/累计¥）
 - 单窗口上下堆叠全部组件，窗口内滚动查看；拖标题栏移动窗口，拖边缘缩放，置顶显示
