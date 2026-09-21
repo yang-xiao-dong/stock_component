@@ -7,7 +7,7 @@ import time
 
 from components.base import Component, assemble
 from config import REFRESH, STOCKS
-from core import stock_api
+from core import data_source
 
 
 class StockApi:
@@ -21,10 +21,10 @@ class StockApi:
             scheduler.add("stock.realtime", REFRESH["realtime"], self.update_all_stock_data)
 
     def update_all_stock_data(self):
-        """更新所有股票数据"""
+        """更新所有股票数据（经数据源，在线/离线对组件透明）"""
         for stock in STOCKS:
             try:
-                self.stock_data[stock["code"]] = stock_api.get_realtime(stock["code"])
+                self.stock_data[stock["code"]] = data_source.get_realtime(stock["code"])
             except Exception:
                 self.stock_data[stock["code"]] = None
 
@@ -67,7 +67,7 @@ class StockApi:
             self.stock_data[code] is None or
             time.time() - self.stock_data[code].get("timestamp", 0) > 10):
             try:
-                new_data = stock_api.get_realtime(code)
+                new_data = data_source.get_realtime(code)
                 if new_data:
                     new_data["timestamp"] = time.time()
                     self.stock_data[code] = new_data
@@ -85,7 +85,7 @@ class StockApi:
         if code is None:
             code = STOCKS[self.current_stock_index]["code"]
         try:
-            return stock_api.get_minute_data(code)
+            return data_source.get_minute_data(code)
         except Exception as e:
             print(f"获取分时数据失败: {e}")
             return None
@@ -95,7 +95,7 @@ class StockApi:
         if code is None:
             code = STOCKS[self.current_stock_index]["code"]
         try:
-            return stock_api.get_kline(code)
+            return data_source.get_kline(code)
         except Exception as e:
             print(f"获取K线数据失败: {e}")
             return None

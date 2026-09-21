@@ -16,7 +16,7 @@ from pathlib import Path
 import webview
 
 from config import APP_TITLE, WINDOW
-from core import http_server
+from core import data_source, http_server
 from core.scheduler import Scheduler
 from core.window_utils import WindowControls
 
@@ -52,6 +52,22 @@ class AppApi(WindowControls):
     def get_components(self):
         """组件清单（前端信息用）"""
         return [{"id": c.id, "title": c.title} for c in self._components]
+
+    # ---------- 数据模式（在线/离线快照）：窗口级，作用于全部组件 ----------
+
+    def get_data_mode(self):
+        return data_source.get_mode()
+
+    def set_data_mode(self, mode, date=None):
+        """切换 online/offline；offline 需给快照日期，成功后由前端重载组件页面"""
+        return data_source.set_mode(mode, date)
+
+    def list_snapshots(self):
+        return data_source.list_snapshots()
+
+    def capture_snapshot(self):
+        """抓取当前整组数据并存为当日快照"""
+        return data_source.capture_today()
 
     def switch_component(self, comp_id):
         """在当前窗口内切换到指定组件页面"""

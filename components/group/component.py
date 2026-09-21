@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from components.base import Component, assemble
 from config import GROUP_NAME, KLINE_DAYS, PRINCIPAL, REFRESH, STOCKS
-from core import group_calc, stock_api
+from core import data_source, group_calc
 
 FETCH_WORKERS = 4  # 并发抓取分时/日K的线程数
 
@@ -34,7 +34,7 @@ class GroupApi:
     # ---------- 数据抓取 ----------
 
     def refresh_realtime(self):
-        data = stock_api.get_realtime_batch([s["code"] for s in STOCKS])
+        data = data_source.get_realtime_batch([s["code"] for s in STOCKS])
         if data:
             with self._lock:
                 self._realtime = data
@@ -42,7 +42,7 @@ class GroupApi:
     def refresh_minute(self):
         codes = [s["code"] for s in STOCKS]
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
-            fetched = dict(zip(codes, ex.map(stock_api.get_minute_data, codes)))
+            fetched = dict(zip(codes, ex.map(data_source.get_minute_data, codes)))
         minute_map = {c: v for c, v in fetched.items() if v}
         if not minute_map:
             return
@@ -59,7 +59,7 @@ class GroupApi:
     def refresh_kline(self):
         codes = [s["code"] for s in STOCKS]
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
-            fetched = dict(zip(codes, ex.map(lambda c: stock_api.get_kline(c, KLINE_DAYS), codes)))
+            fetched = dict(zip(codes, ex.map(lambda c: data_source.get_kline(c, KLINE_DAYS), codes)))
         kmap = {c: v for c, v in fetched.items() if v}
         if not kmap:
             return

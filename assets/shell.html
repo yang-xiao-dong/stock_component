@@ -21,9 +21,17 @@
     height: 20px;
     margin-bottom: 8px;
     flex-shrink: 0;
-    cursor: move;
   }
-  .tb-title { font-size: 11px; font-weight: 600; color: #aeb6c4; }
+  .tb-title { font-size: 11px; font-weight: 600; color: #aeb6c4; cursor: move; }
+  .tb-tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .tb-btn { font-size: 10px; color: #aeb6c4; background: rgba(255,255,255,.08);
+            padding: 1px 7px; border-radius: 6px; cursor: pointer; }
+  .tb-btn:hover { background: rgba(255,255,255,.18); color: #e8ebf0; }
+  .tb-badge { font-size: 9px; color: #ffd54f; background: rgba(255,213,79,.15);
+              padding: 1px 6px; border-radius: 6px; }
+  .tb-select { font-size: 10px; background: rgba(24,26,34,.95); color: #dfe3ea;
+               border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+               padding: 0 2px; height: 17px; }
   .stack {
     display: flex;
     flex-direction: column;
@@ -34,7 +42,15 @@
 </style>
 </head>
 <body>
-  <div class="topbar"><span class="tb-title">{{APP_TITLE}}</span></div>
+  <div class="topbar">
+    <span class="tb-title">{{APP_TITLE}}</span>
+    <span class="tb-tools">
+      <span class="tb-badge" id="modeBadge" style="display:none">离线</span>
+      <select class="tb-select" id="snapDate" style="display:none" title="选择快照日期"></select>
+      <span class="tb-btn" id="modeToggle" title="切换 在线/离线快照">离线</span>
+      <span class="tb-btn" id="saveSnap" title="抓取当前整组数据保存为快照">存快照</span>
+    </span>
+  </div>
   <div class="stack"><!-- COMPONENT SLOTS --></div>
 
   <!-- 窗口级缩放手柄（组件卡片内的手柄在嵌入模式下已隐藏） -->
@@ -50,9 +66,9 @@
   <script src="shared.js"></script>
   <script>
     bindResize();
-    // 窗口移动（程序化）：顶部标题栏 + 组件卡片之间的空隙
+    // 窗口移动（程序化）：标题文字 + 组件卡片之间的空隙（顶栏按钮区不参与拖动）
     // pointermove 逐步 move_to；pointer capture 保证拖出窗口边界不丢事件
-    document.querySelectorAll('.topbar, .stack').forEach(el => {
+    document.querySelectorAll('.tb-title, .stack').forEach(el => {
       el.addEventListener('pointerdown', async e => {
         if (e.button !== 0) return;
         const py = api();
@@ -72,6 +88,78 @@
         el.addEventListener('pointerup', up);
       });
     });
+
+    // ---------- 数据模式：在线 / 离线快照 ----------
+    function reloadSlots() {
+      document.querySelectorAll('.slot').forEach(f => {
+        try { f.contentWindow.location.reload(); }
+        catch (_) { const s = f.src; f.src = s; }
+      });
+    }
+
+    function flashBtn(id, msg, ms) {
+      const b = document.getElementById(id);
+      const t = b.textContent;
+      b.textContent = msg;
+      setTimeout(() => { b.textContent = t; }, ms || 2000);
+    }
+
+    async function initDataMode() {
+      const py = api();
+      if (!py || !py.get_data_mode) return;
+      try {
+        const snaps = await py.list_snapshots();
+        const mode = await py.get_data_mode();
+        const sel = document.getElementById('snapDate');
+        sel.innerHTML = snaps.map(d => `<option value="${d}">${d}</option>`).join('');
+        const offline = mode.mode === 'offline';
+        sel.style.display = offline ? '' : 'none';
+        if (offline && mode.date) sel.value = mode.date;
+        document.getElementById('modeToggle').textContent = offline ? '回到在线' : '离线';
+        const badge = document.getElementById('modeBadge');
+        badge.style.display = offline ? '' : 'none';
+        badge.textContent = `离线 ${mode.date || ''}`;
+        document.getElementById('saveSnap').style.display = offline ? 'none' : '';
+      } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('modeToggle').addEventListener('click', async () => {
+      const py = api(); if (!py) return;
+      try {
+        const mode = await py.get_data_mode();
+        if (mode.mode === 'offline') {
+          if (await py.set_data_mode('live')) { reloadSlots(); initDataMode(); }
+        } else {
+          const snaps = await py.list_snapshots();
+          if (!snaps.length) { flashBtn('modeToggle', '无快照'); return; }
+          const date = document.getElementById('snapDate').value || snaps[snaps.length - 1];
+          if (await py.set_data_mode('offline', date)) { reloadSlots(); initDataMode(); }
+        }
+      } catch (e) { console.error(e); }
+    });
+
+    document.getElementById('snapDate').addEventListener('change', async () => {
+      const py = api(); if (!py) return;
+      try {
+        if (await py.set_data_mode('offline', document.getElementById('snapDate').value)) {
+          reloadSlots(); initDataMode();
+        }
+      } catch (e) { console.error(e); }
+    });
+
+    document.getElementById('saveSnap').addEventListener('click', async () => {
+      const py = api(); if (!py) return;
+      const btn = document.getElementById('saveSnap');
+      btn.textContent = '保存中…';
+      try {
+        const r = await py.capture_snapshot();
+        btn.textContent = r.ok ? `已存 ${r.date}` : '保存失败';
+        if (r.ok) await initDataMode();
+      } catch (e) { console.error(e); btn.textContent = '保存失败'; }
+      setTimeout(() => { btn.textContent = '存快照'; }, 2500);
+    });
+
+    whenBridgeReady(initDataMode);
   </script>
 </body>
 </html>
