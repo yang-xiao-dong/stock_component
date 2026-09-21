@@ -34,8 +34,8 @@
 </style>
 </head>
 <body>
-  <div class="topbar pywebview-drag-region"><span class="tb-title">{{APP_TITLE}}</span></div>
-  <div class="stack pywebview-drag-region"><!-- COMPONENT SLOTS --></div>
+  <div class="topbar"><span class="tb-title">{{APP_TITLE}}</span></div>
+  <div class="stack"><!-- COMPONENT SLOTS --></div>
 
   <!-- 窗口级缩放手柄（组件卡片内的手柄在嵌入模式下已隐藏） -->
   <div class="rz rz-n" data-resize="n"></div>
@@ -48,6 +48,30 @@
   <div class="rz rz-se" data-resize="se" title="拖动调整窗口大小"><i></i></div>
 
   <script src="shared.js"></script>
-  <script>bindResize();</script>
+  <script>
+    bindResize();
+    // 窗口移动（程序化）：顶部标题栏 + 组件卡片之间的空隙
+    // pointermove 逐步 move_to；pointer capture 保证拖出窗口边界不丢事件
+    document.querySelectorAll('.topbar, .stack').forEach(el => {
+      el.addEventListener('pointerdown', async e => {
+        if (e.button !== 0) return;
+        const py = api();
+        if (!py || !py.get_window_pos || !py.move_to) return;
+        e.preventDefault();
+        try { el.setPointerCapture(e.pointerId); } catch (_) {}
+        const p0 = await py.get_window_pos();
+        if (!p0 || p0.x == null) return;
+        const cx = e.clientX, cy = e.clientY;
+        const move = ev => { py.move_to(p0.x + ev.clientX - cx, p0.y + ev.clientY - cy); };
+        const up = ev => {
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+      });
+    });
+  </script>
 </body>
 </html>
