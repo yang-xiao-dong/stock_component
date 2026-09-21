@@ -10,7 +10,17 @@
 - build_group_minute : 分时 —— 各股当日盈亏(¥)细线 + 组合合计(¥)
 - build_group_kline  : 日K —— 组合市值(¥)蜡烛 + 个股持市值(¥)细线 + 建仓份额
 - build_contribution : 盈亏分解 —— 每只股票当日/累计盈亏(¥)、持仓市值(¥)
+
+输出结构契约见 core/data_define/group.py，本模块经其构造返回值。
 """
+from core.data_define import (
+    ContributionRow,
+    ContributionTotal,
+    GroupKline,
+    GroupMinute,
+    KlineBar,
+    StockSeries,
+)
 
 
 def default_shares(prev_closes, principal):
@@ -40,7 +50,7 @@ def build_group_minute(minute_map, prev_closes, shares=None, principal=0.0):
     """
     codes = [c for c in minute_map if prev_closes.get(c)]
     if not codes:
-        return {"times": [], "total": [], "stocks": []}
+        return GroupMinute().to_dict()
     if not shares:
         shares = default_shares({c: prev_closes[c] for c in codes}, principal)
 
@@ -55,12 +65,12 @@ def build_group_minute(minute_map, prev_closes, shares=None, principal=0.0):
         series[code] = pts
     times = sorted(times)
 
-    stocks = [{"code": c, "data": [series[c].get(t) for t in times]} for c in codes]
+    stocks = [StockSeries(code=c, data=[series[c].get(t) for t in times]) for c in codes]
     total = []
     for t in times:
         vals = [series[c][t] for c in codes if t in series[c]]
         total.append(sum(vals) if vals else None)
-    return {"times": times, "total": total, "stocks": stocks}
+    return GroupMinute(times=times, total=total, stocks=stocks).to_dict()
 
 
 def build_group_kline(kline_map, principal, max_points=None):
@@ -70,7 +80,7 @@ def build_group_kline(kline_map, principal, max_points=None):
     返回 {"principal", "dates", "candles":[{date,open,high,low,close}...单位¥],
           "stocks": [{"code", "data": [持市值¥|None...]}], "shares": {code: 份额}}
     """
-    empty = {"principal": principal, "dates": [], "candles": [], "stocks": [], "shares": {}}
+    empty = GroupKline(principal=principal).to_dict()
     if not kline_map:
         return empty
     shares = calc_shares(kline_map, principal)
@@ -84,23 +94,23 @@ def build_group_kline(kline_map, principal, max_points=None):
             lines[c].append(shares[c] * own[c][d]["close"] if d in own[c] else None)
         if not present:
             continue
-        candles.append({
-            "date": d,
-            "open": sum(shares[c] * own[c][d]["open"] for c in present),
-            "high": sum(shares[c] * own[c][d]["high"] for c in present),
-            "low": sum(shares[c] * own[c][d]["low"] for c in present),
-            "close": sum(shares[c] * own[c][d]["close"] for c in present),
-        })
+        candles.append(KlineBar(
+            date=d,
+            open=sum(shares[c] * own[c][d]["open"] for c in present),
+            high=sum(shares[c] * own[c][d]["high"] for c in present),
+            low=sum(shares[c] * own[c][d]["low"] for c in present),
+            close=sum(shares[c] * own[c][d]["close"] for c in present),
+        ))
 
-    stocks = [{"code": c, "data": lines[c]} for c in kline_map]
+    stocks = [StockSeries(code=c, data=lines[c]) for c in kline_map]
     if max_points and len(dates) > max_points:
         cut = len(dates) - max_points
         dates = dates[cut:]
         candles = candles[len(candles) - max_points:]
         for s in stocks:
-            s["data"] = s["data"][cut:]
-    return {"principal": principal, "dates": dates, "candles": candles,
-            "stocks": stocks, "shares": shares}
+            s.data = s.data[cut:]
+    return GroupKline(principal=principal, dates=dates, candles=candles,
+                      stocks=stocks, shares=shares).to_dict()
 
 
 def build_contribution(realtime_map, shares=None, entry=None, principal=0.0):
@@ -130,28 +140,28 @@ def build_contribution(realtime_map, shares=None, entry=None, principal=0.0):
             continue
         prev = rt.get("prev_close")
         ent = (entry or {}).get(c)
-        rows.append({
-            "code": c,
-            "name": rt.get("name") or c,
-            "change_pct": rt["change_pct"],
-            "day_pnl": sh * (rt["price"] - prev) if prev is not None else None,
-            "value": sh * rt["price"],                            # 持仓市值(¥)
-            "total_pnl": sh * (rt["price"] - ent) if ent else None,  # 累计盈亏(¥)
-        })
+        rows.append(ContributionRow(
+            code=c,
+            name=rt.get("name") or c,
+            change_pct=rt["change_pct"],
+            day_pnl=sh * (rt["price"] - prev) if prev is not None else None,
+            value=sh * rt["price"],                            # 持仓市值(¥)
+            total_pnl=sh * (rt["price"] - ent) if ent else None,  # 累计盈亏(¥)
+        ))
     if not rows:
         return [], None
-    rows.sort(key=lambda r: (r["day_pnl"] or 0.0), reverse=True)
+    rows.sort(key=lambda r: (r.day_pnl or 0.0), reverse=True)
 
-    have_total = all(r["total_pnl"] is not None for r in rows)
-    total_pnl = sum(r["total_pnl"] for r in rows) if have_total else None
-    total = {
-        "principal": principal,
-        "day_pnl": sum(r["day_pnl"] or 0.0 for r in rows),
-        "total_value": sum(r["value"] for r in rows),
-        "total_pnl": total_pnl,
-        "total_pct": (total_pnl / principal * 100.0
-                      if total_pnl is not None and principal else None),
-        "up": sum(1 for r in rows if r["change_pct"] > 0),
-        "down": sum(1 for r in rows if r["change_pct"] < 0),
-    }
-    return rows, total
+    have_total = all(r.total_pnl is not None for r in rows)
+    total_pnl = sum(r.total_pnl for r in rows) if have_total else None
+    total = ContributionTotal(
+        principal=principal,
+        day_pnl=sum(r.day_pnl or 0.0 for r in rows),
+        total_value=sum(r.value for r in rows),
+        total_pnl=total_pnl,
+        total_pct=(total_pnl / principal * 100.0
+                   if total_pnl is not None and principal else None),
+        up=sum(1 for r in rows if r.change_pct > 0),
+        down=sum(1 for r in rows if r.change_pct < 0),
+    )
+    return [r.to_dict() for r in rows], total.to_dict()

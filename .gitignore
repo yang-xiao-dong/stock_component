@@ -9,3 +9,6 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# 本地数据（收盘快照等）
+data/

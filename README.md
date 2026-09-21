@@ -24,7 +24,8 @@ G:\stock\
 │   ├── group_calc.py       #   组合均分计算（纯函数）
 │   ├── window_utils.py     #   无边框窗口控制
 │   ├── scheduler.py        #   统一后台刷新调度
-│   └── http_server.py      #   本地静态服务（同源嵌入组件）
+│   ├── http_server.py      #   本地静态服务（同源嵌入组件）
+│   └── data_define/        #   数据契约（字段唯一定义 + 收盘快照）
 ├── components/             # 组件层（自动发现）
 │   ├── base.py             #   Component 基类 + AppApi 路由 + assemble 装配
 │   ├── stock/              #   组件1：个股视图

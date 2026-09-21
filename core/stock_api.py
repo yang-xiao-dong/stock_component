@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""腾讯免费行情接口：实时行情 + 当日分时"""
+"""腾讯免费行情接口：实时行情 + 当日分时 + 日K（输出经 core/data_define 契约构造）"""
 import json
 import re
 
 import requests
+
+from core.data_define import KlineBar, MinutePoint, RealtimeQuote
 
 CODE = "sh603893"
 HEADERS = {
@@ -16,24 +18,24 @@ session.headers.update(HEADERS)
 
 
 def _parse_fields(f):
-    """解析腾讯行情字段为 dict
+    """解析腾讯行情字段为 dict（字段契约见 core/data_define/quote.py）
     腾讯字段: 1名称 2代码 3最新价 4昨收 5今开 6成交量(手) ...
     30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
     """
-    return {
-        "name": f[1],
-        "code": f[2],
-        "price": float(f[3]),
-        "prev_close": float(f[4]),
-        "open": float(f[5]),
-        "time": f[30],
-        "change": float(f[31]),
-        "change_pct": float(f[32]),
-        "high": float(f[33]),
-        "low": float(f[34]),
-        "volume": float(f[36]),        # 手
-        "amount": float(f[37]) / 10000,  # 亿元
-    }
+    return RealtimeQuote(
+        name=f[1],
+        code=f[2],
+        price=float(f[3]),
+        prev_close=float(f[4]),
+        open=float(f[5]),
+        time=f[30],
+        change=float(f[31]),
+        change_pct=float(f[32]),
+        high=float(f[33]),
+        low=float(f[34]),
+        volume=float(f[36]),          # 手
+        amount=float(f[37]) / 10000,  # 亿元
+    ).to_dict()
 
 
 def get_realtime(code=CODE):
@@ -70,7 +72,7 @@ def get_realtime_batch(codes):
 
 
 def get_kline(code=CODE, count=60, period="day"):
-    """返回日K线 [{"date","open","close","high","low","vol"}, ...] 前复权，失败返回 None"""
+    """返回日K线 [{"date","open","close","high","low"}, ...] 前复权，失败返回 None"""
     url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
            f"?param={code},{period},,,{count},qfq")
     try:
@@ -78,8 +80,8 @@ def get_kline(code=CODE, count=60, period="day"):
         data = r.json()["data"][code]
         rows = data.get("qfq" + period) or data.get(period)
         return [
-            {"date": row[0], "open": float(row[1]), "close": float(row[2]),
-             "high": float(row[3]), "low": float(row[4])}
+            KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
+                     high=float(row[3]), low=float(row[4])).to_dict()
             for row in rows if len(row) >= 5
         ]
     except Exception:
@@ -87,7 +89,7 @@ def get_kline(code=CODE, count=60, period="day"):
 
 
 def get_minute_data(code=CODE):
-    """返回当日分时 [( 'HH:MM', price ), ...] 和均价线，失败返回 None"""
+    """返回当日分时 [{"time","price","vol"}, ...]，失败返回 None"""
     url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={code}"
     try:
         r = session.get(url, timeout=5)
@@ -96,7 +98,8 @@ def get_minute_data(code=CODE):
         points = []
         for row in minute:
             t, price, _, vol = row.split(" ")
-            points.append({"time": t[:5], "price": float(price), "vol": float(vol)})
+            points.append(MinutePoint(time=t[:5], price=float(price),
+                                      vol=float(vol)).to_dict())
         return points
     except Exception:
         return None

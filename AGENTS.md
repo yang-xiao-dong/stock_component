@@ -13,6 +13,7 @@ python app.py                         # 唯一入口
 python -m components.stock.component  # 组件1单独调试
 python -m components.group.component  # 组件2单独调试
 python tests/test_group_calc.py       # 单元测试（离线、无网络）
+python tests/test_data_define.py      # 数据契约测试（往返/容错/快照存取）
 python tests/gui_drag_test.py         # GUI 自动化（会移动真实鼠标；默认不运行，仅用户明确要求时用）
 pip install pywebview requests        # 依赖
 ```
@@ -21,8 +22,15 @@ pip install pywebview requests        # 依赖
 app.py（薄入口：发现+装配）→ components/（组件，自动发现）→ core/（基础层）→ assets/（共享前端）
 
 - `components/<id>/`：一个组件 = component.py（Component 子类）+ ui.html；外壳 shell.html 按发现结果动态生成 iframe 槽位
-- `core/`：stock_api（行情抓取）、group_calc（组合计算，纯函数）、window_utils（窗口控制）、scheduler（统一后台刷新）、http_server（127.0.0.1 静态服务，供同源 iframe 嵌入）
+- `core/`：stock_api（行情抓取）、group_calc（组合计算，纯函数）、window_utils（窗口控制）、scheduler（统一后台刷新）、http_server（127.0.0.1 静态服务，供同源 iframe 嵌入）、data_define（数据契约，见下）
 - `assets/`：shell.html（外壳）、shared.css / shared.js（公共样式与工具：桥接穿透、格式化、Canvas 基础、缩放与移动绑定）
+
+## 数据契约（唯一维护处：core/data_define/）
+- 所有跨层数据结构的字段**只在 core/data_define/ 定义**，按数据域分文件：quote（实时行情）/ kline（日K）/ minute（分时）/ stock（股票条目）/ group（组合聚合）/ snapshot（收盘快照）
+- 生产端（stock_api / group_calc）必须经契约构造输出（`to_dict()`）；前端字段名以契约为准
+- 改字段流程：先改 data_define → 同步生产端与前端 → 补测试（tests/test_data_define.py）
+- `from_dict` 容错（缺失字段为 None、未知字段忽略），保证旧版本快照仍可加载
+- **MarketSnapshot 是收盘快照契约**：只存原始数据（行情+分时+日K），组合结构由快照经 group_calc 离线重算、不冗余存储；落盘 `data/snapshots/<date>.json`（已 gitignore），供后期离线加载某交易日收盘后的完整数据
 
 ## 新增组件流程
 1. `components/<id>/component.py`：Component 子类（声明 id / title / embed_height），`create_api(scheduler)` 返回 API 对象；后台刷新任务用 `scheduler.add()` 注册，**不要自开线程**
