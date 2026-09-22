@@ -12,6 +12,7 @@
   .contrib { flex-shrink: 0; margin-top: 6px; }
   .contrib-head {
     display: flex; justify-content: space-between; align-items: baseline;
+    flex-wrap: wrap; gap: 3px 8px;
     font-size: 9px; color: #6b7382; margin-bottom: 3px;
   }
   .contrib-head b { font-weight: 600; }
@@ -19,13 +20,14 @@
   .contrib-list::-webkit-scrollbar { width: 4px; }
   .contrib-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
   .crow {
-    display: grid; grid-template-columns: 8px 1fr 74px 78px;
+    display: grid; grid-template-columns: 8px minmax(0, 1fr) 58px 74px 78px;
     align-items: center; gap: 6px; font-size: 10px; padding: 1.5px 0;
     font-variant-numeric: tabular-nums;
   }
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .cname { color: #c8cdd8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cc { text-align: right; }
+  .cc { text-align: right; white-space: nowrap; }
+  .contrib-labels { color: #aeb6c4; font-size: 9px; padding-bottom: 3px; }
 </style>
 </head>
 <body>
@@ -55,6 +57,9 @@
     <div class="contrib-head">
       <span id="chead">持仓盈亏（当日 / 累计 · 均分建仓）</span>
       <span id="ctotal">合计 --</span>
+    </div>
+    <div class="crow contrib-labels" aria-hidden="true">
+      <span></span><span>股票</span><span class="cc">涨跌幅</span><span class="cc">当日盈亏</span><span class="cc">累计盈亏</span>
     </div>
     <div class="contrib-list" id="contribList"></div>
   </div>
@@ -138,6 +143,7 @@ function renderRt(rt) {
     return `<div class="crow">
       <i class="dot" style="background:${color}"></i>
       <span class="cname" title="${r.name}">${r.name}</span>
+      <span class="cc ${cls(r.change_pct || 0)}" title="行情原始涨跌幅（相对昨收价）">${fmtPct(r.change_pct)}</span>
       <span class="cc ${cls(r.day_pnl || 0)}">${fmtY(r.day_pnl, true)}</span>
       <span class="cc ${cls(r.total_pnl == null ? 0 : r.total_pnl)}">${r.total_pnl == null ? '--' : fmtY(r.total_pnl, true)}</span>
     </div>`;
