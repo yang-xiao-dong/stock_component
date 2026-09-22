@@ -31,7 +31,7 @@ app.py（薄入口：发现+装配）→ components/（组件，自动发现）�
 - 改字段流程：先改 data_define → 同步生产端与前端 → 补测试（tests/test_data_define.py）
 - `from_dict` 容错（缺失字段为 None、未知字段忽略），保证旧版本快照仍可加载
 - **MarketSnapshot 是收盘快照契约**：只存原始数据（行情+分时+日K），组合结构由快照经 group_calc 离线重算、不冗余存储；落盘 `data/snapshots/<date>.json`（已 gitignore），供后期离线加载某交易日收盘后的完整数据
-- **数据源统一入口 core/data_source.py**：组件一律经它取数（不直接 import stock_api），在线/离线对组件透明；模式由窗口级 API（get/set_data_mode、list_snapshots、capture_snapshot）在外壳顶栏切换，切换后外壳重载组件 iframe 整体生效；收盘自动快照（should_auto_save 纯函数判定 + auto_save_tick 定时任务，阈值见 config.AUTO_SNAPSHOT）
+- **数据源统一入口 core/data_source.py**：组件一律经它取数（不直接 import stock_api），在线/离线对组件透明；模式由窗口级 API（get/set_data_mode、list_snapshots、capture_snapshot）在外壳顶栏切换，切换后外壳重载组件 iframe 整体生效；收盘自动快照到点**主动触发一次**并自动布防下一交易日（arm_auto_save，时刻见 config.AUTO_SNAPSHOT，已存在当日快照则跳过）
 
 ## 新增组件流程
 1. `components/<id>/component.py`：Component 子类（声明 id / title / embed_height），`create_api(scheduler)` 返回 API 对象；后台刷新任务用 `scheduler.add()` 注册，**不要自开线程**

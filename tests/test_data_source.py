@@ -62,19 +62,72 @@ def test_bad_mode():
 
 
 def test_should_auto_save():
-    # 2026-09-21 是周一、2026-09-19 是周六
-    ok_now = datetime(2026, 9, 21, 15, 30)
-    assert data_source.should_auto_save(ok_now, [], "2026-09-21") is True
-    # 周末不保存
-    assert data_source.should_auto_save(datetime(2026, 9, 19, 16, 0), [], "2026-09-19") is False
-    # 收盘缓冲时刻之前不保存
-    assert data_source.should_auto_save(datetime(2026, 9, 21, 14, 59), [], "2026-09-21") is False
-    assert data_source.should_auto_save(datetime(2026, 9, 21, 15, 4), [], "2026-09-21") is False
-    # 已有当日快照：防重复保存/覆盖
-    assert data_source.should_auto_save(ok_now, ["2026-09-21"], "2026-09-21") is False
-    # 节假日（当日无新K线）与无K线数据
-    assert data_source.should_auto_save(ok_now, [], "2026-09-18") is False
-    assert data_source.should_auto_save(ok_now, [], None) is False
+    # 只按时间判断：周一至周五且已过收盘缓冲时刻（2026-09-21 周一 / 09-19 周六）
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 15, 30)) is True
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 15, 5)) is True    # 恰好到点
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 15, 4)) is False   # 缓冲时刻前
+    assert data_source.should_auto_save(datetime(2026, 9, 21, 14, 59)) is False
+    assert data_source.should_auto_save(datetime(2026, 9, 19, 16, 0)) is False   # 周六
+    assert data_source.should_auto_save(datetime(2026, 9, 20, 15, 30)) is False  # 周日
+
+
+def test_fire_time():
+    f = data_source._fire_time
+    # 交易日盘中 → 当日收盘时刻
+    assert f(datetime(2026, 9, 21, 10, 0)) == datetime(2026, 9, 21, 15, 5)
+    # 交易日已过收盘 → 立即触发（补存当日）
+    assert f(datetime(2026, 9, 21, 15, 30)) == datetime(2026, 9, 21, 15, 30)
+    # 周五盘中 → 当日收盘时刻；周五收盘后 → 立即补一次（之后布防下周一）
+    assert f(datetime(2026, 9, 18, 10, 0)) == datetime(2026, 9, 18, 15, 5)
+    assert f(datetime(2026, 9, 18, 16, 0)) == datetime(2026, 9, 18, 16, 0)
+    # 周六/周日 → 下周一
+    assert f(datetime(2026, 9, 19, 12, 0)) == datetime(2026, 9, 21, 15, 5)
+    assert f(datetime(2026, 9, 20, 12, 0)) == datetime(2026, 9, 21, 15, 5)
+
+
+def test_capture_skip_existing():
+    # allow_overwrite=False：目标日期快照已存在则跳过（自动保存防覆盖）
+    class FakeApi:
+        def get_realtime_batch(self, codes):
+            return {"a": {"name": "A", "code": "a", "price": 11, "prev_close": 10,
+                          "open": 10, "change": 1, "change_pct": 10.0, "high": 11,
+                          "low": 10, "volume": 1, "amount": 1, "time": "20000101150000"}}
+        def get_minute_data(self, c):
+            return [{"time": "09:30", "price": 10, "vol": 1}]
+        def get_kline(self, c, n=60):
+            return [{"date": "2000-01-01", "open": 10, "close": 11, "high": 12, "low": 9}]
+    real = data_source.stock_api
+    data_source.stock_api = FakeApi()
+    try:
+        r1 = data_source.capture_today(allow_overwrite=True)
+        assert r1["ok"] and r1["date"] == "2000-01-01"
+        r2 = data_source.capture_today(allow_overwrite=False)   # 已存在 → 跳过
+        assert not r2["ok"] and r2.get("skipped") == "exists"
+        r3 = data_source.capture_today(allow_overwrite=True)    # 手动允许覆盖
+        assert r3["ok"]
+    finally:
+        data_source.stock_api = real
+        try:
+            os.remove(data_source.snapshot_path("2000-01-01"))
+        except FileNotFoundError:
+            pass
+
+
+def test_scheduler_once():
+    # 一次性任务到点执行后自动移除
+    import time as _t
+    from core.scheduler import Scheduler
+    s = Scheduler()
+    s.start()
+    ran = []
+    s.add_once("t1", _t.time() - 1, lambda: ran.append(1))
+    for _ in range(30):
+        if ran:
+            break
+        _t.sleep(0.1)
+    s.stop()
+    assert ran == [1]
+    assert all(not t.get("once") for t in s._tasks)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,18 @@ class Scheduler:
             "next": now if immediate else now + float(interval),
         })
 
+    def add_once(self, name, when, fn):
+        """注册一次性任务：到点执行一次后自动移除；when 为 datetime 或 time.time() 秒"""
+        if hasattr(when, "timestamp"):
+            when = when.timestamp()
+        self._tasks.append({
+            "name": name,
+            "interval": 0.0,
+            "fn": fn,
+            "next": float(when),
+            "once": True,
+        })
+
     def start(self):
         if self._thread is not None:
             return
@@ -38,11 +50,14 @@ class Scheduler:
     def _run(self):
         while not self._stop.is_set():
             now = time.time()
-            for task in self._tasks:
+            for task in list(self._tasks):
                 if now >= task["next"]:
                     try:
                         task["fn"]()
                     except Exception as e:
-                        print(f"[{task['name']}] 刷新失败: {e}")
-                    task["next"] = time.time() + task["interval"]
+                        print(f"[{task['name']}] 执行失败: {e}")
+                    if task.get("once"):
+                        self._tasks.remove(task)
+                    else:
+                        task["next"] = time.time() + task["interval"]
             self._stop.wait(self._tick)
