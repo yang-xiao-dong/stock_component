@@ -5,7 +5,7 @@
 ## 快速开始
 
 ```bash
-pip install pywebview requests
+pip install -r requirements.txt
 python app.py        # 唯一入口
 ```
 
@@ -14,7 +14,7 @@ python app.py        # 唯一入口
 项目内置 `builder` 模块，可生成无需安装 Python 的 Windows 单文件 EXE：
 
 ```bash
-pip install pyinstaller
+pip install -r requirements-build.txt
 python -m builder
 ```
 
@@ -26,6 +26,22 @@ python -m builder --dist-dir D:\release
 ```
 
 打包器会自动发现并收集 `components/` 下的组件及其界面资源。EXE 保存的快照位于 `%LOCALAPPDATA%\StockWidget\data\snapshots`，升级或移动 EXE 不会丢失。目标电脑需为 Windows 10/11，并具备 Microsoft Edge WebView2 Runtime（通常已随系统安装）。
+
+### 自动打包与发布（GitHub）
+
+将完整 Git 仓库推送到 GitHub 后，内置的 `Windows 打包与自动发布` 工作流会在 `master` / `main` 推送、PR 或手动运行时执行离线测试、脚本语法检查和 Windows EXE 构建。每次成功构建的 EXE 与 `SHA256SUMS.txt` 可在 Actions 的 Artifacts 下载，保留 14 天。
+
+默认分支自上次正式发布以来累计 **至少 5 个新功能提交**，构建成功后自动创建 GitHub Release，附带 EXE、SHA256 校验文件和自动生成的发布说明。新功能使用 `feat: 中文说明` 或 `feat(组件): 中文说明`；修复使用 `fix: 中文说明`，文档使用 `docs: 中文说明`，均不计入功能数。一次推送超过 5 个功能时会合并发布一个包含全部改动的版本；普通合并提交不重复计数，Squash 合并按最终提交计数。
+
+计数从 `.release-policy.json` 的基线开始，历史功能不追溯；流水线功能自身计为第 1 个功能。首次自动发布为 `v1.0.1`，后续为 `v1.0.2`、`v1.0.3`。`version.py` 保留应用默认版本，流水线从上次正式发布标签计算打包版本并传给 `builder --version`，无需机器人回写主分支；需要跨大版本时可手动提高 `version.py`。只有正式发布成功才重置功能计数，草稿与预发布不计入。不要手工占用待发布的版本标签。
+
+仓库需启用 GitHub Actions，并允许发布任务使用 `GITHUB_TOKEN` 的 `contents: write` 权限，无需另存个人 Token。若组织策略禁止此权限，需要管理员放开；标签保护规则也需允许工作流创建版本标签。首次接入需配置远程仓库并推送本地提交，只有本地 Git 提交不会触发云端流水线。
+
+```bash
+python -m builder.release  # 本地查看功能计数和下一版本，不执行发布
+```
+
+发布失败可重跑 Actions：文件先上传至草稿，全部上传成功后才公开；同一提交的草稿可续传，已公开版本不会覆盖。手动运行工作流仍遵守 5 个功能的门槛，PR 仅测试打包，不正式发布。
 
 - **个股组件**：组内股票滑动/滚轮/点击切换，实时行情 + 分时 + 日K，5秒刷新
 - **组合组件**：以本金为锚（¥ 为绝对度量，% 相对本金）——本金均分建仓于K线窗口首日、持有不动；组合分时（各股当日盈亏¥细线 + 组合合计¥）、组合日K（市值¥蜡烛 + 本金基准线）、持仓盈亏分解（当日/累计¥）

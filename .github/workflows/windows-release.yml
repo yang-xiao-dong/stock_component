@@ -1,0 +1,130 @@
+name: Windows 打包与自动发布
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    outputs:
+      should_release: ${{ steps.plan.outputs.should_release }}
+      tag: ${{ steps.plan.outputs.tag }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+      target_commit: ${{ steps.plan.outputs.target_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 安装打包依赖
+        run: python -m pip install -r requirements-build.txt
+      - name: 离线回归测试
+        run: |
+          $tests = @('test_group_calc.py', 'test_data_define.py', 'test_data_source.py', 'test_stock_api.py', 'test_builder.py', 'test_release.py')
+          foreach ($test in $tests) {
+            python "tests/$test"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: 前端脚本语法检查
+        run: node tests/check_scripts.cjs
+      - name: 获取已正式发布的版本
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tags = gh api "repos/$env:GITHUB_REPOSITORY/releases" --paginate --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/released-tags.txt", ($tags -join "`n"))
+      - name: 计算新功能数量与版本
+        id: plan
+        run: python -m builder.release --released-tags "$env:RUNNER_TEMP/released-tags.txt" --github-output "$env:GITHUB_OUTPUT"
+      - name: 构建 Windows 单文件 EXE
+        env:
+          BUILD_VERSION: ${{ steps.plan.outputs.version }}
+        run: python -m builder --version "$env:BUILD_VERSION"
+      - name: 生成 SHA256 校验文件
+        run: |
+          $lines = Get-ChildItem -LiteralPath dist -Filter '*.exe' | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          if (-not $lines) { throw '未找到打包产物' }
+          [IO.File]::WriteAllLines("$pwd/dist/SHA256SUMS.txt", [string[]]$lines, [Text.UTF8Encoding]::new($false))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stock-widget-windows-${{ github.run_id }}
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: >-
+      needs.build.outputs.should_release == 'true' &&
+      github.event_name != 'pull_request' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stock-widget-windows-${{ github.run_id }}
+          path: dist
+      - name: 发布 EXE 与校验文件
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          PREVIOUS_TAG: ${{ needs.build.outputs.previous_tag }}
+          TARGET_COMMIT: ${{ needs.build.outputs.target_commit }}
+        run: |
+          $existing = gh release view "$env:RELEASE_TAG" --json isDraft,targetCommitish
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) { throw '版本已发布，拒绝覆盖现有版本' }
+            if ($release.targetCommitish -ne $env:TARGET_COMMIT) { throw '已有草稿指向不同提交，拒绝覆盖' }
+          } else {
+            $tagRef = gh api "repos/$env:GH_REPO/git/ref/tags/$env:RELEASE_TAG"
+            if ($LASTEXITCODE -eq 0) { throw '版本标签已存在但尚未正式发布，请先处理该标签' }
+            $releaseArgs = @('release', 'create', $env:RELEASE_TAG, '--target', $env:TARGET_COMMIT, '--title', "股票小组件 $env:RELEASE_TAG", '--draft', '--generate-notes')
+            if ($env:PREVIOUS_TAG) { $releaseArgs += @('--notes-start-tag', $env:PREVIOUS_TAG) }
+            gh @releaseArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $files = @(Get-ChildItem -LiteralPath dist -File | ForEach-Object { $_.FullName })
+          gh release upload "$env:RELEASE_TAG" @files --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit "$env:RELEASE_TAG" --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
