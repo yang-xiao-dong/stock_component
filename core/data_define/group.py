@@ -41,17 +41,17 @@ class ContributionRow(Contract):
     code: str = None
     name: str = None
     change_pct: Optional[float] = None   # 当日涨跌幅(%)
-    day_pnl: Optional[float] = None      # 当日盈亏(¥)
-    value: float = None                  # 持仓市值(¥)
+    day_pnl: Optional[float] = None      # 当日盈亏(¥)，建仓数据未就绪时为 None
+    value: Optional[float] = None        # 持仓市值(¥)，建仓数据未就绪时为 None
     total_pnl: Optional[float] = None    # 累计盈亏(¥)，建仓数据未就绪时为 None
 
 
 @dataclass
 class ContributionTotal(Contract):
     """组合合计（% 一律相对本金）"""
-    principal: float = None        # 本金(¥)
-    day_pnl: float = None          # 当日盈亏(¥)
-    total_value: float = None      # 总市值(¥)
+    principal: float = None            # 本金(¥)
+    day_pnl: Optional[float] = None    # 当日盈亏(¥)，建仓数据未就绪时为 None
+    total_value: Optional[float] = None  # 总市值(¥)，建仓数据未就绪时为 None
     total_pnl: Optional[float] = None  # 累计盈亏(¥)
     total_pct: Optional[float] = None  # 累计收益率(%) = total_pnl/principal
     up: int = None                 # 上涨家数

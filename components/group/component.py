@@ -29,7 +29,8 @@ class GroupApi:
         if scheduler:
             scheduler.add("group.realtime", REFRESH["realtime"], self.refresh_realtime)
             scheduler.add("group.minute", REFRESH["minute"], self.refresh_minute)
-            scheduler.add("group.kline", REFRESH["kline"], self.refresh_kline)
+            # 日K立即预热：概览的总值/盈亏依赖日K首日建仓份额，晚加载会导致数字跳变
+            scheduler.add("group.kline", REFRESH["kline"], self.refresh_kline, immediate=True)
 
     # ---------- 数据抓取 ----------
 
@@ -64,10 +65,15 @@ class GroupApi:
         if not kmap:
             return
         data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
-        entry = {c: bars[0]["open"] for c, bars in kmap.items() if bars}
+        new_entry = {c: bars[0]["open"] for c, bars in kmap.items() if bars}
         with self._lock:
             self._kline = data
-            self._shares = data["shares"]
+            # 合并而非整体覆盖：单只日K偶发抓取失败时保留其旧份额，避免总值/盈亏跳变
+            shares = dict(self._shares or {})
+            shares.update(data["shares"])
+            entry = dict(self._entry or {})
+            entry.update(new_entry)
+            self._shares = shares
             self._entry = entry
 
     # ---------- JS 接口 ----------

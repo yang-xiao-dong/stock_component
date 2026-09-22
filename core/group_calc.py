@@ -117,8 +117,9 @@ def build_contribution(realtime_map, shares=None, entry=None, principal=0.0):
     """盈亏分解（绝对 ¥ 为主）：当日/累计盈亏与持仓市值
 
     realtime_map: {code: rt}
-    shares/entry: 建仓份额与建仓价（来自日K窗口首日）；缺省时按昨收均分近似
-    当日盈亏，累计字段为 None（等待建仓数据）。
+    shares/entry: 建仓份额与建仓价（来自日K窗口首日）；未就绪时份额依赖字段
+    （day_pnl/value/total_value/total_pnl/total_pct）一律为 None，前端显示 --，
+    不用昨收近似值——否则建仓数据落地瞬间数字会整体跳变。
     返回 (rows, total)：rows 按 day_pnl 降序；total 含合计与相对本金百分比。
     """
     codes = [c for c in realtime_map
@@ -126,11 +127,18 @@ def build_contribution(realtime_map, shares=None, entry=None, principal=0.0):
     codes = [c for c in codes if realtime_map[c].get("price") is not None]
     if not codes:
         return [], None
-    if not shares:
-        prev = {c: realtime_map[c].get("prev_close") for c in codes}
-        prev = {c: p for c, p in prev.items() if p}
-        shares = default_shares(prev, principal)
-        entry = {c: prev[c] for c in shares}
+    if not shares or not entry:
+        rows = [ContributionRow(
+            code=c,
+            name=realtime_map[c].get("name") or c,
+            change_pct=realtime_map[c]["change_pct"],
+        ) for c in codes]
+        total = ContributionTotal(
+            principal=principal,
+            up=sum(1 for c in codes if realtime_map[c]["change_pct"] > 0),
+            down=sum(1 for c in codes if realtime_map[c]["change_pct"] < 0),
+        )
+        return [r.to_dict() for r in rows], total.to_dict()
 
     rows = []
     for c in codes:

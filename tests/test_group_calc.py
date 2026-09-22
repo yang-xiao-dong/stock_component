@@ -95,12 +95,14 @@ def test_contribution_yuan():
     assert near(total["total_pct"], 4.0, 1e-4)   # 相对本金
 
 
-def test_contribution_fallback_approx():
-    # 无建仓数据：按昨收均分近似 → 累计=当日
+def test_contribution_fallback_pending():
+    # 无建仓数据：份额依赖字段一律 None（等日K首日建仓落地），只有涨跌幅/家数
     rt = {"a": {"name": "A", "price": 11, "prev_close": 10, "change_pct": 10.0}}
     rows, total = group_calc.build_contribution(rt, None, None, 10000)
-    assert near(rows[0]["day_pnl"], 1000)        # 1000股 × 1元
-    assert near(total["total_pct"], 10.0)
+    assert rows[0]["day_pnl"] is None and rows[0]["value"] is None
+    assert rows[0]["total_pnl"] is None
+    assert total["day_pnl"] is None and total["total_value"] is None
+    assert total["total_pnl"] is None and total["total_pct"] is None
     assert total["up"] == 1 and total["down"] == 0
 
 
