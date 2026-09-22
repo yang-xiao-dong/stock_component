@@ -31,6 +31,13 @@ def test_from_dict_tolerant():
     assert bar.close is None
 
 
+def test_component_layout_contract():
+    layout = dd.ComponentLayout(order=['stock', 'group', 'analysis'])
+    assert dd.ComponentLayout.from_dict(layout.to_dict()).order == layout.order
+    old = dd.ComponentLayout.from_dict({'unknown': 1})
+    assert old.order is None
+
+
 def test_kline_minute_roundtrip():
     bars = [dd.KlineBar(date="2026-09-21", open=10, close=11, high=12, low=9)]
     assert dd.KlineBar.from_dict(bars[0].to_dict()).close == 11

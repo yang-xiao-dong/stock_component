@@ -16,6 +16,7 @@ from .analysis import AnalysisBoard, LongTermAssessment, ShortTermAssessment
 from .group import ContributionRow, ContributionTotal, GroupKline, GroupMinute, StockSeries
 from .kline import KlineBar
 from .minute import MinutePoint
+from .layout import ComponentLayout
 from .quote import RealtimeQuote
 from .snapshot import (
     SNAPSHOT_VERSION,
@@ -32,6 +33,7 @@ __all__ = [
     "GroupMinute", "GroupKline", "StockSeries",
     "ContributionRow", "ContributionTotal",
     "ShortTermAssessment", "LongTermAssessment", "AnalysisBoard",
+    "ComponentLayout",
     "MarketSnapshot", "SNAPSHOT_VERSION",
     "save_snapshot", "load_snapshot", "snapshot_path",
 ]

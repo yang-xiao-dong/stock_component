@@ -31,7 +31,7 @@
   .tb-title { font-size: 11px; font-weight: 600; color: #aeb6c4; cursor: move; }
   .tb-tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
   .tb-btn { font-size: 10px; color: #aeb6c4; background: rgba(255,255,255,.08);
-            padding: 1px 7px; border-radius: 6px; cursor: pointer; }
+            padding: 1px 7px; border-radius: 6px; cursor: pointer; border: 0; font-family: inherit; }
   .tb-btn:hover { background: rgba(255,255,255,.18); color: #e8ebf0; }
   .window-tools { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; }
   .window-btn { border: 0; width: 26px; height: 24px; padding: 0;
@@ -50,12 +50,24 @@
     gap: 10px;
   }
   .slot { border: 0; width: 100%; display: block; }
+  .layout-panel { flex-basis: 100%; padding: 8px; border: 1px solid rgba(255,255,255,.12);
+                  border-radius: 8px; color: #c8cdd8; font-size: 11px; }
+  .layout-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .layout-list { list-style: none; margin-top: 6px; max-height: 180px; overflow-y: auto; }
+  .layout-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  .layout-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layout-number { width: 16px; color: #8892a6; text-align: center; }
+  .order-btn { width: 27px; height: 24px; padding: 0; font-size: 14px; }
+  .layout-panel button:disabled { opacity: .35; cursor: default; }
+  .layout-panel button:focus-visible, #layoutToggle:focus-visible { outline: 1px solid #aeb6c4; outline-offset: 1px; }
+  .layout-status { color: #8892a6; font-size: 10px; margin-top: 5px; }
 </style>
 </head>
 <body>
   <div class="topbar">
     <span class="tb-title">{{APP_TITLE}}</span>
     <span class="tb-tools">
+      <button type="button" class="tb-btn" id="layoutToggle" aria-expanded="false" aria-controls="layoutPanel">排序</button>
       <span class="tb-badge" id="modeBadge" style="display:none">离线</span>
       <select class="tb-select" id="snapDate" style="display:none" title="选择快照日期"></select>
       <span class="tb-btn" id="modeToggle" title="切换 在线/离线快照">离线</span>
@@ -67,6 +79,11 @@
       <button type="button" class="tb-btn window-btn" id="closeWindow"
               title="关闭股票小组件" aria-label="关闭窗口" disabled>×</button>
     </span>
+    <section class="layout-panel" id="layoutPanel" aria-label="组件排序" hidden>
+      <div class="layout-head"><span>组件显示顺序</span><button type="button" class="tb-btn" id="resetOrder" disabled>恢复默认</button></div>
+      <ol class="layout-list" id="layoutList"></ol>
+      <p class="layout-status" id="layoutStatus" role="status">使用上下箭头调整，自动保存。</p>
+    </section>
   </div>
   <div class="stack"><!-- COMPONENT SLOTS --></div>
 
@@ -83,6 +100,82 @@
   <script src="shared.js"></script>
   <script>
     bindResize();
+    // 仅调整 CSS 排列；不移动 iframe 节点，保留组件当前状态。
+    const componentSlots = Array.from(document.querySelectorAll('.slot[data-component-id]'));
+    const defaultOrder = componentSlots.map(frame => frame.dataset.componentId);
+    let componentOrder = [...componentSlots].sort((a, b) => Number(a.style.order) - Number(b.style.order))
+      .map(frame => frame.dataset.componentId);
+    let orderReady = false, orderSaving = false;
+
+    function renderOrderControls() {
+      const list = document.getElementById('layoutList');
+      list.replaceChildren();
+      componentOrder.forEach((id, index) => {
+        const frame = componentSlots.find(item => item.dataset.componentId === id);
+        const row = document.createElement('li');
+        row.className = 'layout-row'; row.dataset.componentId = id;
+        const number = document.createElement('span');
+        number.className = 'layout-number'; number.textContent = index + 1;
+        const label = document.createElement('span');
+        label.className = 'layout-label'; label.textContent = frame.title;
+        row.append(number, label);
+        [-1, 1].forEach(direction => {
+          const button = document.createElement('button');
+          button.type = 'button'; button.className = 'tb-btn order-btn';
+          button.textContent = direction < 0 ? '↑' : '↓';
+          button.dataset.direction = direction;
+          button.title = `${direction < 0 ? '上移' : '下移'}${frame.title}`;
+          button.setAttribute('aria-label', button.title);
+          button.disabled = !orderReady || orderSaving || index + direction < 0 || index + direction >= componentOrder.length;
+          button.addEventListener('click', () => {
+            const next = [...componentOrder];
+            [next[index], next[index + direction]] = [next[index + direction], next[index]];
+            saveComponentOrder(next, {id, direction});
+          });
+          row.append(button);
+        });
+        list.append(row);
+      });
+      document.getElementById('resetOrder').disabled = !orderReady || orderSaving ||
+        componentOrder.every((id, index) => id === defaultOrder[index]);
+    }
+
+    async function saveComponentOrder(next, focus) {
+      if (!orderReady || orderSaving) return;
+      orderSaving = true;
+      renderOrderControls();
+      const status = document.getElementById('layoutStatus');
+      status.textContent = '正在保存…';
+      try {
+        if (!await api().set_component_order(next)) throw new Error('排序保存失败');
+        componentOrder = next;
+        componentSlots.forEach(frame => { frame.style.order = componentOrder.indexOf(frame.dataset.componentId); });
+        status.textContent = '顺序已保存，重启后仍保留。';
+      } catch (error) {
+        console.error(error);
+        status.textContent = '保存失败，顺序未更改，请重试。';
+      } finally {
+        orderSaving = false;
+        renderOrderControls();
+        if (focus) {
+          const row = Array.from(document.querySelectorAll('.layout-row')).find(item => item.dataset.componentId === focus.id);
+          const preferred = row?.querySelector(`[data-direction="${focus.direction}"]`);
+          (preferred && !preferred.disabled ? preferred : row?.querySelector('button:not(:disabled)'))?.focus();
+        }
+      }
+    }
+
+    document.getElementById('layoutToggle').addEventListener('click', () => {
+      const panel = document.getElementById('layoutPanel');
+      panel.hidden = !panel.hidden;
+      document.getElementById('layoutToggle').setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    document.getElementById('resetOrder').addEventListener('click', () => saveComponentOrder([...defaultOrder]));
+    renderOrderControls();
+    whenBridgeReady(() => {
+      orderReady = typeof api().set_component_order === 'function';
+      renderOrderControls();
+    });
     [
       ['minimizeWindow', 'minimize_window', '最小化到任务栏'],
       ['closeWindow', 'close_window', '关闭股票小组件'],

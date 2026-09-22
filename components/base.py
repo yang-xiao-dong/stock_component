@@ -10,12 +10,15 @@
 - 组件 API 的公共方法在装配时挂到窗口 JS 接口上，重名冲突启动即报错
 """
 from pathlib import Path
+from html import escape
+import threading
 
 import webview
 
 from config import APP_TITLE, WINDOW
 from core import data_source, http_server
 from core.runtime_paths import resource_path
+from core.component_layout import ComponentLayoutStore
 from core.scheduler import Scheduler
 from core.window_utils import WindowControls
 
@@ -40,16 +43,31 @@ class Component:
 class AppApi(WindowControls):
     """窗口级接口：组件切换 + 窗口控制；组件接口通过 mount() 动态挂载"""
 
-    def __init__(self, components):
+    def __init__(self, components, layout_store=None):
         WindowControls.__init__(self, min_size=tuple(WINDOW["min"]),
                                 max_size=tuple(WINDOW["max"]))
         self._components = list(components)
         self._by_id = {c.id: c for c in self._components}
         self._mounted = set()
+        self._layout_store = layout_store if layout_store is not None else ComponentLayoutStore()
+        self._layout_lock = threading.Lock()
+        self._component_order = self._layout_store.load(list(self._by_id))
 
     def get_components(self):
         """组件清单（前端信息用）"""
         return [{"id": c.id, "title": c.title} for c in self._components]
+
+    def get_component_order(self):
+        with self._layout_lock:
+            return list(self._component_order)
+
+    def set_component_order(self, order):
+        """保存完整排列；保存失败时保留当前顺序。"""
+        with self._layout_lock:
+            if not self._layout_store.save(order, list(self._by_id)):
+                return False
+            self._component_order = list(order)
+            return True
 
     # ---------- 数据模式（在线/离线快照）：窗口级，作用于全部组件 ----------
 
@@ -97,13 +115,18 @@ class AppApi(WindowControls):
 def assemble(components):
     """装配并启动单窗口应用：本地静态服务 → 动态生成外壳页（上下堆叠组件，可滚动）
     → 建窗 → 挂载组件 API → 起调度器 → 进入主循环"""
+    components = list(components)
     scheduler = Scheduler()
     api = AppApi(components)
 
     # 按发现的组件生成外壳槽位（新增组件零改动出现在窗口里）
     shell_tpl = resource_path("assets", "shell.html").read_text(encoding="utf-8")
+    positions = {component_id: index for index, component_id in enumerate(api.get_component_order())}
     slots = "\n    ".join(
-        f'<iframe class="slot" style="height:{c.embed_height}px" src="/components/{c.id}/ui.html"></iframe>'
+        f'<iframe class="slot" data-component-id="{escape(c.id, quote=True)}" '
+        f'title="{escape(c.title, quote=True)}" '
+        f'style="height:{c.embed_height}px;order:{positions[c.id]}" '
+        f'src="/components/{escape(c.id, quote=True)}/ui.html"></iframe>'
         for c in components
     )
     shell_html = (shell_tpl
