@@ -199,7 +199,7 @@ function render(rt) {
 function drawChart(points, prevClose) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
-  if (!points || points.length < 2) return;
+  if (!points || points.length < 2) { drawChartMessage('暂无足够分时数据，稍后自动重试'); return; }
   const prices = points.map(p => p.price);
   let max = Math.max(...prices, prevClose), min = Math.min(...prices, prevClose);
   const pad = (max - min) * 0.1 || 0.1; max += pad; min -= pad;
@@ -232,7 +232,7 @@ function drawChart(points, prevClose) {
 function drawKline(bars) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
-  if (!bars || bars.length < 2) return;
+  if (!bars || bars.length < 2) { drawChartMessage('暂无足够日 K 数据，稍后自动重试'); return; }
   let max = -1e9, min = 1e9;
   bars.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
   const pad = (max - min) * 0.08 || 0.1; max += pad; min -= pad;
@@ -260,7 +260,7 @@ function redrawChart() {
   const prevClose = (lastRt && (lastRt.prev_close || lastRt.open)) || 0;
   if (mode === 'min' && minuteCache && lastRt) drawChart(minuteCache, prevClose);
   else if (mode === 'k' && klineCache) drawKline(klineCache);
-  else setupCanvas();
+  else drawChartMessage('图表数据加载中…');
 }
 
 async function refresh() {
@@ -272,22 +272,27 @@ async function refresh() {
   try {
     const rt = await py.get_realtime();
     render(rt);
-    if (rt && (!minuteCache || Date.now() - minuteAt > 60000)) {
-      minuteCache = await py.get_minute_data();
-      minuteAt = Date.now();
-    }
-    if (!klineCache) klineCache = await py.get_kline();
     lastRt = rt;
     const prevClose = (rt && (rt.prev_close || rt.open)) || 0;
     if (mode === 'min') {
+      if (!minuteCache?.length) drawChartMessage('分时数据加载中…');
+      if (rt && (!minuteCache?.length || Date.now() - minuteAt > 60000)) {
+        minuteCache = await py.get_minute_data();
+        minuteAt = Date.now();
+      }
       if (minuteCache && rt) drawChart(minuteCache, prevClose);
-      else setupCanvas();
+      else drawChartMessage('分时数据暂不可用，稍后自动重试');
     } else if (mode === 'k') {
+      if (!klineCache?.length) {
+        drawChartMessage('日 K 数据加载中…');
+        klineCache = await py.get_kline();
+      }
       if (klineCache) drawKline(klineCache);
-      else setupCanvas();
+      else drawChartMessage('日 K 数据暂不可用，稍后自动重试');
     }
   } catch (e) {
     $('upd').textContent = '连接失败…';
+    drawChartMessage('图表加载失败，稍后自动重试');
     console.error('Refresh error:', e);
   }
 }

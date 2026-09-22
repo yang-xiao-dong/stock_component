@@ -53,6 +53,16 @@ function setupCanvas() {
   return { cv, ctx, w, h };
 }
 
+function drawChartMessage(message) {
+  const { ctx, w, h } = setupCanvas();
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#aeb6c4';
+  ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(message, w / 2, h / 2, Math.max(1, w - 16));
+}
+
 function hgrid(ctx, w, h, PT, PB) {
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {

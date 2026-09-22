@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """腾讯免费行情接口：实时行情 + 当日分时 + 日K（输出经 core/data_define 契约构造）"""
 import json
+import logging
 import re
 
 import requests
@@ -15,6 +16,26 @@ HEADERS = {
 
 session = requests.Session()
 session.headers.update(HEADERS)
+logger = logging.getLogger(__name__)
+CHART_BASE_URLS = (
+    "https://proxy.finance.qq.com/ifzqgtimg",
+    "https://web.ifzq.gtimg.cn",
+)
+
+
+def _get_chart_data(path, params):
+    """腾讯图表接口：优先使用财经入口，失败时回退到原入口。"""
+    for base_url in CHART_BASE_URLS:
+        try:
+            response = session.get(f"{base_url}{path}", params=params, timeout=5)
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code", 0) != 0 or not payload.get("data"):
+                raise ValueError("行情接口未返回有效数据")
+            return payload["data"]
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("图表数据获取失败 (%s%s): %s", base_url, path, exc)
+    return {}
 
 
 def _parse_fields(f):
@@ -73,11 +94,10 @@ def get_realtime_batch(codes):
 
 def get_kline(code=CODE, count=60, period="day"):
     """返回日K线 [{"date","open","close","high","low"}, ...] 前复权，失败返回 None"""
-    url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-           f"?param={code},{period},,,{count},qfq")
     try:
-        r = session.get(url, timeout=5)
-        data = r.json()["data"][code]
+        data = _get_chart_data("/appstock/app/fqkline/get", {
+            "param": f"{code},{period},,,{count},qfq",
+        })[code]
         rows = data.get("qfq" + period) or data.get(period)
         return [
             KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
@@ -90,11 +110,9 @@ def get_kline(code=CODE, count=60, period="day"):
 
 def get_minute_data(code=CODE):
     """返回当日分时 [{"time","price","vol"}, ...]，失败返回 None"""
-    url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={code}"
     try:
-        r = session.get(url, timeout=5)
-        data = r.json()
-        minute = data["data"][code]["data"]["data"]
+        data = _get_chart_data("/appstock/app/minute/query", {"code": code})
+        minute = data[code]["data"]["data"]
         points = []
         for row in minute:
             t, price, _, vol = row.split(" ")

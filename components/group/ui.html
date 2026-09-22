@@ -153,13 +153,15 @@ function renderRt(rt) {
 function drawMinute(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
-  if (!data || !data.times || data.times.length < 2 || !data.stocks) return;
+  if (!data || !data.times || data.times.length < 2 || !data.stocks) {
+    drawChartMessage('暂无足够分时数据，稍后自动重试'); return;
+  }
 
   const PR = 48, PT = 10, PB = 14;
   const all = [];
   data.stocks.forEach(s => s.data.forEach(v => { if (v != null) all.push(v); }));
   (data.total || []).forEach(v => { if (v != null) all.push(v); });
-  if (!all.length) return;
+  if (!all.length) { drawChartMessage('暂无足够分时数据，稍后自动重试'); return; }
   let max = Math.max(...all, 0), min = Math.min(...all, 0);
   const pad = (max - min) * 0.12 || 10; max += pad; min -= pad;
   const umax = max - pad, umin = min + pad;
@@ -215,7 +217,9 @@ function drawMinute(data) {
 function drawK(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
-  if (!data || !data.candles || data.candles.length < 2) return;
+  if (!data || !data.candles || data.candles.length < 2) {
+    drawChartMessage('暂无足够日 K 数据，稍后自动重试'); return;
+  }
 
   const PR = 48, PT = 10, PB = 14;
   let max = -1e9, min = 1e9;
@@ -278,7 +282,7 @@ function drawK(data) {
 function redrawChart() {
   if (mode === 'min' && minuteCache) drawMinute(minuteCache);
   else if (mode === 'k' && klineCache) drawK(klineCache);
-  else setupCanvas();
+  else drawChartMessage('图表数据加载中…');
 }
 
 /* ---------------- 数据流 ---------------- */
@@ -290,20 +294,25 @@ async function refresh() {
     const rt = await py.get_group_realtime();
     renderRt(rt);
     if (mode === 'min') {
-      if (!minuteCache || Date.now() - minuteAt > 60000) {
+      if (!minuteCache?.times?.length) drawChartMessage('分时数据加载中…');
+      if (!minuteCache?.times?.length || Date.now() - minuteAt > 60000) {
         minuteCache = await py.get_group_minute();
         minuteAt = Date.now();
       }
-      if (minuteCache) drawMinute(minuteCache); else setupCanvas();
+      if (minuteCache) drawMinute(minuteCache);
+      else drawChartMessage('分时数据暂不可用，稍后自动重试');
     } else {
-      if (!klineCache || Date.now() - klineAt > 600000) {
+      if (!klineCache?.candles?.length) drawChartMessage('日 K 数据加载中…');
+      if (!klineCache?.candles?.length || Date.now() - klineAt > 600000) {
         klineCache = await py.get_group_kline();
         klineAt = Date.now();
       }
-      if (klineCache) drawK(klineCache); else setupCanvas();
+      if (klineCache) drawK(klineCache);
+      else drawChartMessage('日 K 数据暂不可用，稍后自动重试');
     }
   } catch (e) {
     $('upd').textContent = '连接失败…';
+    drawChartMessage('图表加载失败，稍后自动重试');
     console.error('Refresh error:', e);
   }
 }
