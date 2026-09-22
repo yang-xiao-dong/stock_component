@@ -23,7 +23,7 @@ class BuilderTests(unittest.TestCase):
     def test_discovers_current_components(self):
         self.assertEqual(
             discover_component_modules(),
-            ["components.group.component", "components.stock.component"],
+            ["components.analysis.component", "components.group.component", "components.stock.component"],
         )
 
     def test_arguments_create_versioned_single_file_build(self):

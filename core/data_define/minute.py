@@ -10,3 +10,4 @@ class MinutePoint(Contract):
     time: str = None    # HH:MM
     price: float = None
     vol: float = None   # 该分钟成交量（手）
+    date: str = None    # 交易日 YYYY-MM-DD；旧快照缺省，由数据源补齐快照日期

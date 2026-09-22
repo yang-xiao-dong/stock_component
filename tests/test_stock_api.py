@@ -22,7 +22,7 @@ def response(payload, status=200):
 
 class ChartApiTests(unittest.TestCase):
     def test_minute_recovers_from_block_page(self):
-        payload = {"code": 0, "data": {"sh603893": {"data": {"data": [
+        payload = {"code": 0, "data": {"sh603893": {"data": {"date": "20260922", "data": [
             "0930 203.90 1383 28199370.00", "0931 205.17 8642 176949561.29",
         ]}}}}
         with patch.object(stock_api.session, "get", side_effect=[
@@ -30,6 +30,7 @@ class ChartApiTests(unittest.TestCase):
         ]) as get:
             points = stock_api.get_minute_data("sh603893")
         self.assertEqual([p["price"] for p in points], [203.90, 205.17])
+        self.assertEqual([p["date"] for p in points], ["2026-09-22", "2026-09-22"])
         self.assertEqual(get.call_count, 2)
         self.assertNotEqual(get.call_args_list[0].args[0], get.call_args_list[1].args[0])
 

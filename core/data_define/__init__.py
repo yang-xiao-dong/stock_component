@@ -12,6 +12,7 @@
 from_dict 容错以兼容旧快照。详见 AGENTS.md「数据契约」。
 """
 from .common import Contract
+from .analysis import AnalysisBoard, LongTermAssessment, ShortTermAssessment
 from .group import ContributionRow, ContributionTotal, GroupKline, GroupMinute, StockSeries
 from .kline import KlineBar
 from .minute import MinutePoint
@@ -30,6 +31,7 @@ __all__ = [
     "RealtimeQuote", "KlineBar", "MinutePoint", "StockInfo",
     "GroupMinute", "GroupKline", "StockSeries",
     "ContributionRow", "ContributionTotal",
+    "ShortTermAssessment", "LongTermAssessment", "AnalysisBoard",
     "MarketSnapshot", "SNAPSHOT_VERSION",
     "save_snapshot", "load_snapshot", "snapshot_path",
 ]

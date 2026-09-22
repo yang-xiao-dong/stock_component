@@ -40,6 +40,32 @@ WINDOW = {
 REFRESH = {"realtime": 5, "minute": 60, "kline": 600}
 KLINE_DAYS = 60  # 组合日K取的天数
 
+# 独立判断组件：长线趋势与短线回撤收复形态，互不依赖组合本金。
+ANALYSIS = {
+    "refresh_seconds": 60,
+    "kline_days": 120,
+    "long_term": {
+        "medium_days": 20,
+        "long_days": 60,
+        "slope_days": 5,
+        "range_days": 20,
+    },
+    "short_term": {
+        "trend_days": 20,
+        "short_trend_days": 5,
+        "min_points": 30,
+        "lookback_minutes": 90,
+        "max_recovery_minutes": 45,
+        "hold_minutes": 5,
+        "min_drawdown_pct": 3.0,
+        "min_rebound_pct": 2.0,
+        "min_recovery_pct": 60.0,
+        "hold_recovery_pct": 50.0,
+        "max_minute_delay": 5,
+        "max_quote_age_seconds": 180,
+    },
+}
+
 # 收盘自动快照：到收盘缓冲时刻主动触发保存一次，完成后再布防下一个交易日；
 # 启动时若已过该时刻立即补一次。只按时间判断，当日快照已存在则跳过（不覆盖）
 AUTO_SNAPSHOT = {

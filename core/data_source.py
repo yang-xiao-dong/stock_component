@@ -10,6 +10,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from dataclasses import replace
 
 from config import AUTO_SNAPSHOT, KLINE_DAYS, STOCKS
 from core import stock_api
@@ -148,7 +149,7 @@ def get_minute_data(code):
     if is_offline():
         with _lock:
             pts = _snapshot.minute.get(code) or []
-            return [p.to_dict() for p in pts]
+            return [replace(p, date=p.date or _snapshot.date).to_dict() for p in pts]
     return stock_api.get_minute_data(code)
 
 

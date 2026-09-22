@@ -36,6 +36,22 @@ def test_kline_minute_roundtrip():
     assert dd.KlineBar.from_dict(bars[0].to_dict()).close == 11
     p = dd.MinutePoint(time="09:31", price=11.0, vol=123)
     assert dd.MinutePoint.from_dict(p.to_dict()).time == "09:31"
+    assert dd.MinutePoint.from_dict({"time": "09:31", "price": 11}).date is None
+    p.date = "2026-09-22"
+    assert dd.MinutePoint.from_dict(p.to_dict()).date == "2026-09-22"
+
+
+def test_alert_contract_roundtrip_and_missing_fields():
+    item = dd.ShortTermAssessment(code="a", name="A", status="signal", change_pct=2.5,
+                        drawdown_pct=4, rebound_pct=3, recovery_pct=75)
+    long = dd.LongTermAssessment(code="a", status="uptrend", ma_medium=100, ma_long=90)
+    board = dd.AnalysisBoard(mode="live", date="2026-09-22", status="ready", short_term=[item], long_term=[long])
+    restored = dd.AnalysisBoard.from_dict(board.to_dict())
+    assert restored.short_term[0]["recovery_pct"] == 75
+    assert restored.long_term[0]["ma_long"] == 90
+    assert dd.ShortTermAssessment.from_dict(item.to_dict()).change_pct == 2.5
+    old = dd.ShortTermAssessment.from_dict({"code": "a", "unknown": 1})
+    assert old.code == "a" and old.status is None
 
 
 def test_group_roundtrip_nested():

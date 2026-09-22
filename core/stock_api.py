@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from datetime import datetime
 
 import requests
 
@@ -113,11 +114,14 @@ def get_minute_data(code=CODE):
     try:
         data = _get_chart_data("/appstock/app/minute/query", {"code": code})
         minute = data[code]["data"]["data"]
+        raw_date = data[code]["data"].get("date")
+        trade_date = (datetime.strptime(str(raw_date).replace("-", ""), "%Y%m%d")
+                      .date().isoformat() if raw_date else None)
         points = []
         for row in minute:
             t, price, _, vol = row.split(" ")
             points.append(MinutePoint(time=t[:5], price=float(price),
-                                      vol=float(vol)).to_dict())
+                                      vol=float(vol), date=trade_date).to_dict())
         return points
     except Exception:
         return None

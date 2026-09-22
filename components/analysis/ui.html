@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>长短线判断</title>
+<link rel="stylesheet" href="../../assets/shared.css">
+<style>
+  .header { align-items: center; gap: 8px; }
+  .intro { margin-top: 6px; color: #aeb6c4; font-size: 10px; line-height: 1.5; }
+  .summary { margin: 7px 0; font-size: 11px; color: #aeb6c4; }
+  .summary.active { color: #ffd54f; }
+  .analysis-tabs { margin-top: 8px; }
+  .analysis-tabs button { border: 0; font-family: inherit; padding: 3px 10px; }
+  .trend-uptrend { border-left-color: #ff5252; background: rgba(255,82,82,.06); }
+  .trend-downtrend { border-left-color: #26c281; background: rgba(38,194,129,.06); }
+  .trend-range, .trend-insufficient { border-left-color: #8892a6; background: rgba(255,255,255,.04); }
+  .alerts { overflow-y: auto; flex: 1; min-height: 0; scrollbar-width: thin; }
+  .alert-item { padding: 7px 8px; margin-bottom: 6px; border-radius: 7px;
+                border-left: 3px solid #ffd54f; background: rgba(255,213,79,.08); }
+  .alert-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 11px; }
+  .alert-title { color: #ffd54f; font-size: 10px; margin-left: auto; }
+  .alert-reason { color: #c8cdd8; font-size: 10px; line-height: 1.5; margin-top: 4px; }
+  .alert-time { color: #aeb6c4; font-size: 9px; margin-top: 3px; }
+  .empty { color: #aeb6c4; font-size: 11px; padding: 14px 4px; line-height: 1.6; }
+  .footnote { color: #aeb6c4; font-size: 9px; margin-top: 5px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="header pywebview-drag-region">
+    <span class="name"><b>长短线判断</b><span class="gtag" id="source">在线</span></span>
+    <span class="upd" id="upd">等待连接…</span>
+  </div>
+  <div class="tabs analysis-tabs" role="tablist" aria-label="判断周期">
+    <button class="tab on" id="longTab" role="tab" aria-selected="true">长线判断</button>
+    <button class="tab" id="shortTab" role="tab" aria-selected="false">短线判断 <span id="signalCount"></span></button>
+  </div>
+  <div class="intro" id="intro">日K趋势与近期支撑压力区间。</div>
+  <div class="summary" id="summary">正在等待首次扫描…</div>
+  <div class="alerts" id="alerts" aria-live="polite"></div>
+  <div class="footnote" id="footnote">疑似洗盘仅为价格形态提示，不能确认资金意图。</div>
+</div>
+<script src="../../assets/shared.js"></script>
+<script>
+let busy = false;
+let lastPayload = '', latestBoard = null, view = 'long';
+
+function textElement(tag, className, text) {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = text;
+  return element;
+}
+
+function renderAnalysis(board, force = false) {
+  const payload = JSON.stringify(board);
+  if (!force && payload === lastPayload) return;
+  lastPayload = payload;
+  latestBoard = board;
+  $('source').textContent = board.mode === 'offline' ? `快照 ${board.date}` : '在线';
+  $('upd').textContent = board.updated_at ? board.updated_at.slice(11, 19) + ' 扫描' : '扫描中…';
+  const signals = (board.short_term || []).filter(item => item.status === 'signal');
+  $('signalCount').textContent = signals.length ? `(${signals.length})` : '';
+  const items = (view === 'long' ? board.long_term : board.short_term) || [];
+  const missing = items.filter(item => item.status === 'insufficient');
+  $('intro').textContent = view === 'long' ? '日K均线趋势与近期支撑压力区间；以分析日前已完成的日K为准。' :
+    '观察上升趋势中的明显回撤、反弹收复与持续站稳。';
+  $('summary').classList.toggle('active', view === 'short' && signals.length > 0);
+  $('summary').textContent = board.status !== 'ready' ? board.message :
+    (view === 'long' ? `已分析 ${items.length - missing.length}/${items.length} 只 · 长线趋势` :
+      `${signals.length} 只符合形态 · 已分析 ${items.length - missing.length}/${items.length} 只`);
+  $('alerts').replaceChildren();
+  if (board.status !== 'ready' || (view === 'short' && !signals.length) || !items.length) {
+    const message = board.status !== 'ready' ? board.message :
+      (missing.length === items.length ? '数据尚不足，暂不判断。' : '当前没有符合条件的疑似洗盘形态。');
+    $('alerts').append(textElement('div', 'empty', message));
+  }
+  if (board.status === 'ready' && view === 'long') {
+    const labels = {uptrend: '趋势向上', downtrend: '趋势偏弱', range: '区间观察', insufficient: '数据不足'};
+    const price = value => value == null ? '--' : value.toFixed(2);
+    for (const item of items) {
+      const row = textElement('div', `alert-item trend-${item.status}`, '');
+      const head = textElement('div', 'alert-head', '');
+      head.append(textElement('strong', '', item.name),
+        textElement('span', cls(item.change_pct || 0), fmtPct(item.change_pct)),
+        textElement('span', 'alert-title', labels[item.status] || '观察中'));
+      row.append(head, textElement('div', 'alert-reason', item.reason));
+      if (item.status !== 'insufficient') {
+        row.append(textElement('div', 'alert-reason', `现价 ${price(item.price)} · 中期均价 ${price(item.ma_medium)} · 长期均价 ${price(item.ma_long)}`),
+          textElement('div', 'alert-time', `区间支撑 ${price(item.support)} / 压力 ${price(item.resistance)} · 日K截至 ${item.as_of}`));
+      }
+      $('alerts').append(row);
+    }
+  }
+  for (const signal of view === 'short' && board.status === 'ready' ? signals : []) {
+    const row = textElement('div', 'alert-item', '');
+    const head = textElement('div', 'alert-head', '');
+    head.append(textElement('strong', '', signal.name),
+                textElement('span', cls(signal.change_pct || 0), fmtPct(signal.change_pct)),
+                textElement('span', 'alert-title', '疑似洗盘'));
+    row.append(head, textElement('div', 'alert-reason', signal.reason),
+      textElement('div', 'alert-time', `${fmtCode(signal.code)} · 高点 ${signal.peak_time} → 低点 ${signal.trough_time} · 行情 ${fmtTime(signal.observed_at)}`));
+    $('alerts').append(row);
+  }
+  $('footnote').textContent = view === 'long' ? '支撑压力为历史区间参考；长线趋势与短线信号独立判断。' :
+    missing.length ? `${missing.length} 只数据不足；悬停查看原因。形态提示不能确认资金意图。` :
+    (board.mode === 'offline' ? '快照回看结果，不作为新的实时提醒。' : '形态不再满足时自动移除；不能确认资金意图。');
+  $('footnote').title = missing.map(item => `${item.name}：${item.reason}`).join('\n');
+}
+
+async function refreshAlerts() {
+  if (busy) return;
+  const py = api();
+  if (!py || !py.get_analysis) return;
+  busy = true;
+  try { renderAnalysis(await py.get_analysis()); }
+  catch (error) { console.error(error); $('upd').textContent = '连接失败，重试中…'; }
+  finally { busy = false; }
+}
+
+for (const [id, selected] of [['longTab', 'long'], ['shortTab', 'short']]) {
+  $(id).addEventListener('click', () => {
+    view = selected;
+    for (const [tabId, value] of [['longTab', 'long'], ['shortTab', 'short']]) {
+      $(tabId).classList.toggle('on', value === view);
+      $(tabId).setAttribute('aria-selected', String(value === view));
+    }
+    if (latestBoard) renderAnalysis(latestBoard, true);
+  });
+}
+
+whenBridgeReady(() => {
+  refreshAlerts();
+  setInterval(refreshAlerts, 5000);
+});
+</script>
+</body>
+</html>

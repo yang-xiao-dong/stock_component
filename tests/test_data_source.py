@@ -49,6 +49,7 @@ def test_mode_switch_and_getters():
         assert set(batch) == {"a"}
         pts = data_source.get_minute_data("a")
         assert len(pts) == 2 and pts[1]["price"] == 11
+        assert all(p["date"] == "2026-09-18" for p in pts)  # 旧快照补齐分时交易日
         bars = data_source.get_kline("a", 60)
         assert bars[0]["close"] == 11
 
