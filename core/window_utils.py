@@ -149,6 +149,26 @@ class WindowControls:
 
     # ---------- 程序化调整（原生不可用时的回退） ----------
 
+    def close_window(self):
+        """通过 pywebview 正常关闭当前绑定窗口。"""
+        if self._window is None:
+            return False
+        try:
+            self._window.destroy()
+            return True
+        except Exception:
+            return False
+
+    def minimize_window(self):
+        """最小化当前绑定窗口，可从任务栏恢复。"""
+        if self._window is None:
+            return False
+        try:
+            self._window.minimize()
+            return True
+        except Exception:
+            return False
+
     def resize_to(self, width, height):
         """按像素调整窗口大小（不访问 native 句柄）"""
         if self._window is None:

@@ -16,9 +16,15 @@
   body::-webkit-scrollbar { width: 5px; }
   body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 3px; }
   .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgb(24,26,34);
     display: flex;
     align-items: center;
-    height: 20px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    min-height: 26px;
     margin-bottom: 8px;
     flex-shrink: 0;
   }
@@ -27,6 +33,12 @@
   .tb-btn { font-size: 10px; color: #aeb6c4; background: rgba(255,255,255,.08);
             padding: 1px 7px; border-radius: 6px; cursor: pointer; }
   .tb-btn:hover { background: rgba(255,255,255,.18); color: #e8ebf0; }
+  .window-tools { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; }
+  .window-btn { border: 0; width: 26px; height: 24px; padding: 0;
+                font: 16px/1 "Segoe UI", sans-serif; }
+  .window-btn:disabled { opacity: .4; cursor: default; }
+  .window-btn:focus-visible { outline: 1px solid #aeb6c4; outline-offset: 1px; }
+  #closeWindow:hover { background: #c42b3a; color: #fff; }
   .tb-badge { font-size: 9px; color: #ffd54f; background: rgba(255,213,79,.15);
               padding: 1px 6px; border-radius: 6px; }
   .tb-select { font-size: 10px; background: rgba(24,26,34,.95); color: #dfe3ea;
@@ -36,7 +48,6 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-height: 100%;
   }
   .slot { border: 0; width: 100%; display: block; }
 </style>
@@ -49,6 +60,12 @@
       <select class="tb-select" id="snapDate" style="display:none" title="选择快照日期"></select>
       <span class="tb-btn" id="modeToggle" title="切换 在线/离线快照">离线</span>
       <span class="tb-btn" id="saveSnap" title="抓取当前整组数据保存为快照">存快照</span>
+    </span>
+    <span class="window-tools">
+      <button type="button" class="tb-btn window-btn" id="minimizeWindow"
+              title="最小化到任务栏" aria-label="最小化窗口" disabled>−</button>
+      <button type="button" class="tb-btn window-btn" id="closeWindow"
+              title="关闭股票小组件" aria-label="关闭窗口" disabled>×</button>
     </span>
   </div>
   <div class="stack"><!-- COMPONENT SLOTS --></div>
@@ -66,6 +83,20 @@
   <script src="shared.js"></script>
   <script>
     bindResize();
+    [
+      ['minimizeWindow', 'minimize_window', '最小化到任务栏'],
+      ['closeWindow', 'close_window', '关闭股票小组件'],
+    ].forEach(([id, method, title]) => {
+      const btn = document.getElementById(id);
+      whenBridgeReady(() => { btn.disabled = typeof api()[method] !== 'function'; });
+      btn.addEventListener('click', async () => {
+        const py = api();
+        if (!py || typeof py[method] !== 'function') return;
+        try {
+          btn.title = await py[method]() ? title : '操作失败，请重试';
+        } catch (e) { console.error(e); btn.title = '操作失败，请重试'; }
+      });
+    });
     // 窗口移动（程序化）：标题文字 + 组件卡片之间的空隙（顶栏按钮区不参与拖动）
     // pointermove 逐步 move_to；pointer capture 保证拖出窗口边界不丢事件
     document.querySelectorAll('.tb-title, .stack').forEach(el => {
