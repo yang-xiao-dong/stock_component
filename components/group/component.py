@@ -22,7 +22,6 @@ class GroupApi:
         self._realtime = {}       # {code: rt}
         self._minute = None       # build_group_minute 结果（¥）
         self._kline = None        # build_group_kline 结果（¥）
-        self._kline_cache = {}    # code -> 最近一次成功抓取的日K（本轮失败沿用，避免组合缩水）
         self._shares = None       # 建仓份额 {code: shares}（日K窗口首日开盘价均分买入）
         self._entry = None        # 建仓价 {code: price}
 
@@ -34,6 +33,12 @@ class GroupApi:
             scheduler.add("group.kline", REFRESH["kline"], self.refresh_kline, immediate=True)
 
     # ---------- 数据抓取 ----------
+    #
+    # 一致性约定（重算/重启/重载结果一致的前提）：
+    # 组合的每个版本（日K、分时、份额、建仓价）都只由「同一轮抓取的完整数据」
+    # 原子地构建。一轮里任何一只失败 → 整轮作废、沿用上一版完整结果——绝不把
+    # 不同轮次（甚至不同复权源：fqkline前复权 / 备用端点不复权）的数据按股票
+    # 混进同一次计算，否则建仓价与份额会随混入比例漂移，数值前后对不上。
 
     def refresh_realtime(self):
         data = data_source.get_realtime_batch([s["code"] for s in STOCKS])
@@ -43,11 +48,13 @@ class GroupApi:
 
     def refresh_minute(self):
         codes = [s["code"] for s in STOCKS]
+        mode_key = dict(data_source.get_mode())
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
             fetched = dict(zip(codes, ex.map(data_source.get_minute_data, codes)))
-        minute_map = {c: v for c, v in fetched.items() if v}
-        if not minute_map:
+        # 整轮原子替换：缺一只合计线就会被低估，宁可沿用上一版完整分时
+        if any(not fetched.get(c) for c in codes) or data_source.get_mode() != mode_key:
             return
+        minute_map = {c: fetched[c] for c in codes}
         with self._lock:
             prev = {c: (self._realtime.get(c) or {}).get("prev_close") for c in minute_map}
             shares = dict(self._shares) if self._shares else None
@@ -60,22 +67,16 @@ class GroupApi:
 
     def refresh_kline(self):
         codes = [s["code"] for s in STOCKS]
+        mode_key = dict(data_source.get_mode())
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
             fetched = dict(zip(codes, ex.map(lambda c: data_source.get_kline(c, KLINE_DAYS), codes)))
-        # 合并缓存：本轮抓取失败的股票沿用最近一次良好日K
-        with self._lock:
-            merged = dict(self._kline_cache)
-        for c, bars in fetched.items():
-            if bars:
-                merged[c] = bars
-        # 集齐全部股票才重算组合：部分数据会把本金错分给少数股票
-        # （如图表只剩一半股票、每只份额被放大），宁可沿用上一版完整结果
-        if any(c not in merged for c in codes):
+        # 整轮原子替换：缺一只就整轮作废（部分数据会把本金错分给少数股票，
+        # 新旧/异源数据混用会让份额漂移），沿用上一版完整结果
+        if any(not fetched.get(c) for c in codes) or data_source.get_mode() != mode_key:
             return
-        kmap = {c: merged[c] for c in codes}
+        kmap = {c: fetched[c] for c in codes}
         data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
         with self._lock:
-            self._kline_cache = merged
             self._kline = data
             self._shares = data["shares"]
             self._entry = {c: kmap[c][0]["open"] for c in codes}
