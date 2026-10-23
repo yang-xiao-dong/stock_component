@@ -117,6 +117,11 @@
     <div><div class="k">最低</div><div class="v" id="low">--</div></div>
     <div><div class="k">成交量</div><div class="v" id="vol">--</div></div>
     <div><div class="k">成交额</div><div class="v" id="amt">--</div></div>
+    <div><div class="k">PE(TTM)</div><div class="v" id="peTtm">--</div></div>
+    <div><div class="k">PE(动)</div><div class="v" id="peDyn">--</div></div>
+    <div><div class="k">PE(静)</div><div class="v" id="peStat">--</div></div>
+    <div><div class="k">市净率</div><div class="v" id="pb">--</div></div>
+    <div><div class="k">总市值</div><div class="v" id="mcap">--</div></div>
   </div>
   <div class="rz rz-n" data-resize="n"></div>
   <div class="rz rz-s" data-resize="s"></div>
@@ -190,6 +195,12 @@ function render(rt) {
   $('low').textContent = rt.low != null ? rt.low.toFixed(2) : '--';
   $('vol').textContent = rt.volume != null ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
   $('amt').textContent = rt.amount != null ? rt.amount.toFixed(2) + '亿' : '--';
+  const pe = v => (v != null && v > 0) ? v.toFixed(1) : '--';
+  $('peTtm').textContent = pe(rt.pe_ttm);
+  $('peDyn').textContent = pe(rt.pe_dynamic);
+  $('peStat').textContent = pe(rt.pe_static);
+  $('pb').textContent = pe(rt.pb);
+  $('mcap').textContent = rt.market_cap != null ? rt.market_cap.toFixed(0) + '亿' : '--';
   $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
 
   $('status').textContent = isTrading() ? '● 交易中' : '已收盘';

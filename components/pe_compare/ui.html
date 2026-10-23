@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PE对比</title>
+<link rel="stylesheet" href="../../assets/shared.css">
+<style>
+  .header { align-items: center; gap: 8px; }
+  canvas { height: 158px; min-height: 120px; flex: none; }
+  .summary { margin-top: 2px; font-size: 10px; color: #aeb6c4; flex-shrink: 0;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pe-table { margin-top: 6px; flex-shrink: 0; font-size: 10px; width: 100%;
+              border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .pe-table th { color: #6b7382; font-weight: 400; font-size: 9px; text-align: right;
+                 padding: 2px 4px; white-space: nowrap; }
+  .pe-table th:first-child, .pe-table td:first-child { text-align: left; }
+  .pe-table td { padding: 2px 4px; text-align: right; color: #c8cdd8; white-space: nowrap; }
+  .dot { display: inline-block; width: 8px; height: 3px; border-radius: 2px;
+         margin-right: 5px; vertical-align: 2px; }
+  .dot.dash { height: 0; border-top: 2px dashed #ffffff; background: none; }
+  .lv-high { color: #ff5252; }        /* 分位≥70：偏贵 */
+  .lv-mid { color: #c8cdd8; }         /* 30~70：中性 */
+  .lv-low { color: #26c281; }         /* <30：偏便宜 */
+  .footnote { color: #6b7382; font-size: 9px; margin-top: 6px; line-height: 1.5; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="header pywebview-drag-region">
+    <span class="name"><b>PE对比</b><span class="gtag" id="source">在线</span></span>
+    <span class="upd" id="upd">等待连接…</span>
+  </div>
+  <div class="summary" id="summary">正在获取PE数据…</div>
+  <canvas id="chart"></canvas>
+  <table class="pe-table" id="peTable"></table>
+  <div class="footnote">PE为TTM口径；历史PE按当前EPS折算（跨财报季有台阶，美股为前复权+延迟行情）。分位=窗口内低于当前PE的交易日占比。</div>
+  <div class="rz rz-n" data-resize="n"></div>
+  <div class="rz rz-s" data-resize="s"></div>
+  <div class="rz rz-w" data-resize="w"></div>
+  <div class="rz rz-e" data-resize="e"></div>
+  <div class="rz rz-nw" data-resize="nw"></div>
+  <div class="rz rz-ne" data-resize="ne"></div>
+  <div class="rz rz-sw" data-resize="sw"></div>
+  <div class="rz rz-se" data-resize="se" title="拖动调整窗口大小"><i></i></div>
+</div>
+
+<script src="../../assets/shared.js"></script>
+<script>
+/* PE对比：各股PE折线 + 参照（高通）虚线；表格给当前PE/分位/中位 */
+const COLORS = ['#4fc3f7', '#ffd54f', '#f06292', '#9575cd', '#4db6ac', '#ff8a65'];
+const REF_COLOR = '#ffffff';
+
+let latestBoard = null;
+
+function seriesColor(series, index) {
+  return series.is_reference ? REF_COLOR : COLORS[index % COLORS.length];
+}
+
+function toDate(s) { return new Date(s + 'T00:00:00'); }
+
+function fmtPe(v) { return (v == null || v <= 0) ? '--' : v.toFixed(1); }
+
+function levelClass(pct) {
+  if (pct == null) return 'lv-mid';
+  return pct >= 70 ? 'lv-high' : (pct >= 30 ? 'lv-mid' : 'lv-low');
+}
+
+function drawChart(board) {
+  const { ctx, w, h } = setupCanvas();
+  ctx.clearRect(0, 0, w, h);
+  const all = [];
+  const ref = board.reference;
+  const peers = board.peers || [];
+  if (ref && ref.points && ref.points.length) all.push({ series: ref, color: REF_COLOR, dashed: true });
+  peers.forEach((p, i) => { if (p.points && p.points.length >= 2) all.push({ series: p, color: COLORS[i % COLORS.length], dashed: false }); });
+  if (!all.length) { drawChartMessage(board.status === 'ready' ? '暂无可用PE序列（亏损或数据不足）' : board.message || '加载中…'); return; }
+
+  // x 轴按真实日期对齐（A股与美股交易日历不同，用日期而非序号）
+  let dMin = Infinity, dMax = -Infinity, peMax = 0, lblMin = '', lblMax = '';
+  all.forEach(({ series }) => series.points.forEach(p => {
+    const t = toDate(p.date).getTime();
+    if (t < dMin) { dMin = t; lblMin = p.date; }
+    if (t > dMax) { dMax = t; lblMax = p.date; }
+    if (p.pe > peMax) peMax = p.pe;
+  }));
+  if (dMax <= dMin) dMax = dMin + 1;
+  const PT = 6, PB = 14, PL = 30, PR = 4;
+  const x = t => PL + (t - dMin) / (dMax - dMin) * (w - PL - PR);
+  const y = v => PT + (peMax * 1.06 - v) / (peMax * 1.06) * (h - PT - PB);
+
+  hgrid(ctx, w, h, PT, PB);
+  // 纵轴刻度
+  ctx.fillStyle = '#6b7382'; ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  [0, 0.5, 1].forEach(f => {
+    const v = peMax * 1.06 * (1 - f), gy = PT + (h - PT - PB) * f;
+    ctx.fillText(v >= 100 ? Math.round(v) : v.toFixed(1), PL - 3, gy);
+  });
+  // 横轴首尾日期
+  ctx.textAlign = 'left';
+  const fmtD = s => s.slice(2, 4) + '/' + s.slice(5, 7);
+  ctx.fillText(fmtD(lblMin), PL, h - 5);
+  ctx.textAlign = 'right';
+  ctx.fillText(fmtD(lblMax), w - PR, h - 5);
+
+  // 参照虚线（画在下层）
+  for (const item of all.filter(i => i.dashed)) {
+    ctx.save();
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = item.color; ctx.lineWidth = 1.4; ctx.globalAlpha = .9;
+    ctx.beginPath();
+    item.series.points.forEach((p, i) => {
+      const px = x(toDate(p.date).getTime()), py = y(p.pe);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.stroke();
+    ctx.restore();
+    // 右端参照值标注
+    const last = item.series.points[item.series.points.length - 1];
+    ctx.fillStyle = REF_COLOR; ctx.textAlign = 'right'; ctx.globalAlpha = .9;
+    ctx.fillText(fmtPe(last.pe), w - PR, Math.max(PT + 4, y(last.pe) - 5));
+    ctx.globalAlpha = 1;
+  }
+  // 对比组实线
+  all.filter(i => !i.dashed).forEach(item => {
+    strokeSeries(ctx, item.series.points.map(p => [x(toDate(p.date).getTime()), y(p.pe)]), item.color, 1.5);
+  });
+}
+
+function renderTable(board) {
+  const ref = board.reference, peers = board.peers || [];
+  const rows = [];
+  if (ref) {
+    rows.push(`<tr><td><span class="dot dash"></span>${ref.name}<span style="color:#6b7382"> (参照)</span></td>` +
+      `<td>${fmtPe(ref.pe_now)}</td><td>—</td><td>${ref.median != null ? ref.median.toFixed(1) : '--'}</td>` +
+      `<td style="color:#6b7382">${ref.note || '美股·USD'}</td></tr>`);
+  }
+  peers.forEach((p, i) => {
+    const pct = p.percentile;
+    const pctTxt = pct == null ? '--' : pct.toFixed(0) + '%';
+    const tag = pct == null ? '' : (pct >= 70 ? ' 偏高' : (pct < 30 ? ' 偏低' : ''));
+    rows.push(`<tr><td><span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>${p.name}</td>` +
+      `<td>${fmtPe(p.pe_now)}</td><td class="${levelClass(pct)}">${pctTxt}${tag}</td>` +
+      `<td>${p.median != null ? p.median.toFixed(1) : '--'}</td>` +
+      `<td style="color:#6b7382">${p.note || ''}</td></tr>`);
+  });
+  $('peTable').innerHTML = '<tr><th>公司</th><th>PE(TTM)</th><th>一年分位</th><th>中位</th><th></th></tr>' + rows.join('');
+}
+
+function render(board) {
+  latestBoard = board;
+  $('source').textContent = board.mode === 'offline' ? `快照 ${board.date}` : '在线';
+  $('upd').textContent = board.updated_at ? board.updated_at.slice(11, 19) + ' 更新' : '加载中…';
+  $('summary').textContent = board.message || '';
+  renderTable(board);
+  drawChart(board);
+}
+
+function redrawChart() {
+  if (latestBoard) drawChart(latestBoard);
+}
+
+let busy = false;
+async function refresh() {
+  if (busy) return;
+  const py = api();
+  if (!py || !py.get_pe_compare) return;
+  busy = true;
+  try { render(await py.get_pe_compare()); }
+  catch (e) { console.error(e); $('upd').textContent = '连接失败，重试中…'; }
+  finally { busy = false; }
+}
+
+bindResize();
+whenBridgeReady(() => {
+  refresh();
+  setInterval(refresh, 5000);
+});
+</script>
+</body>
+</html>

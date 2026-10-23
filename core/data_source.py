@@ -159,3 +159,13 @@ def get_kline(code, count=KLINE_DAYS):
             bars = _snapshot.kline.get(code) or []
             return [b.to_dict() for b in bars]
     return stock_api.get_kline(code, count)
+
+
+def get_close_series(code, count=250):
+    """收盘价序列（PE折算用）。在线走真实收盘价；离线降级用快照日K收盘
+    （快照仅含 A 股组内股票且窗口较短，美股参照在快照模式下不可用）"""
+    if is_offline():
+        with _lock:
+            bars = (_snapshot.kline.get(code) or [])[-count:]
+            return [{"date": b.date, "close": b.close} for b in bars] or None
+    return stock_api.get_close_series(code, count)

@@ -40,6 +40,20 @@ WINDOW = {
 REFRESH = {"realtime": 5, "minute": 60, "kline": 600}
 KLINE_DAYS = 60  # 组合日K取的天数
 
+# PE对比组件：参照公司（虚线，不参与排名）+ 对比组历史PE折线与分位。
+# 历史PE按当前EPS-TTM折算（约一年窗口）；对比组增减改 peers 即可。
+PE_COMPARE = {
+    "refresh_seconds": 60,   # 当前PE刷新间隔
+    "kline_days": 250,       # 历史窗口（交易日）
+    "reference": {"code": "usQCOM", "name": "高通"},  # 美股延迟行情，代码不带后缀
+    "peers": [
+        {"code": "sh603893", "name": "瑞芯微"},
+        {"code": "sz300458", "name": "全志科技"},
+        {"code": "sh688608", "name": "恒玄科技"},
+        {"code": "sh688099", "name": "晶晨股份"},
+    ],
+}
+
 # 独立判断组件：长线趋势与短线回撤收复形态，互不依赖组合本金。
 ANALYSIS = {
     "refresh_seconds": 60,

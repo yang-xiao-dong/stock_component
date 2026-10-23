@@ -6,6 +6,7 @@
 - minute.py   分时点 MinutePoint
 - stock.py    股票条目 StockInfo
 - group.py    组合聚合 GroupMinute / GroupKline / ContributionRow / ContributionTotal
+- pe.py       PE对比 PePoint / PeSeries / PeCompareBoard
 - snapshot.py 收盘快照 MarketSnapshot（离线加载基础）+ save/load
 
 约定：字段增改先改这里，再改生产端（stock_api/group_calc）与前端；
@@ -17,6 +18,7 @@ from .group import ContributionRow, ContributionTotal, GroupKline, GroupMinute, 
 from .kline import KlineBar
 from .minute import MinutePoint
 from .layout import ComponentLayout
+from .pe import PeCompareBoard, PePoint, PeSeries
 from .quote import RealtimeQuote
 from .snapshot import (
     SNAPSHOT_VERSION,
@@ -33,6 +35,7 @@ __all__ = [
     "GroupMinute", "GroupKline", "StockSeries",
     "ContributionRow", "ContributionTotal",
     "ShortTermAssessment", "LongTermAssessment", "AnalysisBoard",
+    "PePoint", "PeSeries", "PeCompareBoard",
     "ComponentLayout",
     "MarketSnapshot", "SNAPSHOT_VERSION",
     "save_snapshot", "load_snapshot", "snapshot_path",

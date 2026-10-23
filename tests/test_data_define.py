@@ -15,12 +15,16 @@ def test_quote_roundtrip():
     q = dd.RealtimeQuote(name="瑞芯微", code="sh603893", price=101.5,
                          prev_close=100.0, open=100.2, time="20260921150000",
                          change=1.5, change_pct=1.5, high=102.0, low=99.8,
-                         volume=12345.0, amount=12.5)
+                         volume=12345.0, amount=12.5,
+                         pe_ttm=54.4, pe_dynamic=43.3, pe_static=71.6,
+                         pb=15.0, market_cap=744.6)
     d = q.to_dict()
     assert set(d) == {"name", "code", "price", "prev_close", "open", "time",
-                      "change", "change_pct", "high", "low", "volume", "amount"}
+                      "change", "change_pct", "high", "low", "volume", "amount",
+                      "pe_ttm", "pe_dynamic", "pe_static", "pb", "market_cap"}
     q2 = dd.RealtimeQuote.from_dict(d)
     assert q2.price == 101.5 and q2.code == "sh603893" and q2.is_complete()
+    assert q2.pe_ttm == 54.4 and q2.pb == 15.0
 
 
 def test_from_dict_tolerant():

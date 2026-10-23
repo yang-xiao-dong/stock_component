@@ -39,10 +39,20 @@ def _get_chart_data(path, params):
     return {}
 
 
+def _opt_float(f, idx):
+    """可选字段转 float：越界/空串/非数值（如美股该位置是公司名）返回 None"""
+    try:
+        v = f[idx].strip()
+        return float(v) if v else None
+    except (IndexError, ValueError):
+        return None
+
+
 def _parse_fields(f):
     """解析腾讯行情字段为 dict（字段契约见 core/data_define/quote.py）
-    腾讯字段: 1名称 2代码 3最新价 4昨收 5今开 6成交量(手) ...
+    腾讯字段: 1名称 2代码(美股带后缀如QCOM.OQ) 3最新价 4昨收 5今开 6成交量(手) ...
     30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
+    39市盈率TTM 45总市值 46市净率(仅A股) 52市盈率动(仅A股) 53市盈率静(仅A股)
     """
     return RealtimeQuote(
         name=f[1],
@@ -57,6 +67,11 @@ def _parse_fields(f):
         low=float(f[34]),
         volume=float(f[36]),          # 手
         amount=float(f[37]) / 10000,  # 亿元
+        pe_ttm=_opt_float(f, 39),
+        market_cap=_opt_float(f, 45),
+        pb=_opt_float(f, 46),
+        pe_dynamic=_opt_float(f, 52),
+        pe_static=_opt_float(f, 53),
     ).to_dict()
 
 
@@ -127,7 +142,43 @@ def get_minute_data(code=CODE):
         return None
 
 
+def get_close_series(code, count=250):
+    """收盘价序列 [{"date","close"}, ...]，供 PE 历史折算（真实收盘价，非复权K线）。
+
+    - A股（sh/sz）：fqkline 端点不带 qfq 参数 → 不复权
+    - 美股（usXXX）：日K仅支持专用 usfqkline 端点 + 带后缀代码（usQCOM → usQCOM.OQ），
+      且仅前复权可用（接口限制，折算误差约等于股息率）；后缀代码由实时行情字段2推导
+    """
+    try:
+        if code.startswith("us"):
+            symbol = code[2:]
+            if "." not in symbol:
+                quote = get_realtime(code)
+                if not quote:
+                    return None
+                symbol = quote["code"]  # 带后缀，如 QCOM.OQ
+            data = _get_chart_data("/appstock/app/usfqkline/get",
+                                   {"param": f"us{symbol},day,,,{count},qfq"})
+            rows = (data.get(f"us{symbol}") or {}).get("qfqday") or []
+        else:
+            data = _get_chart_data("/appstock/app/fqkline/get",
+                                   {"param": f"{code},day,,,{count},"})
+            rows = (data.get(code) or {}).get("day") or []
+        out = []
+        for row in rows:
+            if len(row) >= 3:
+                try:
+                    out.append({"date": row[0], "close": float(row[2])})
+                except (TypeError, ValueError):
+                    continue
+        return out or None
+    except Exception:
+        return None
+
+
 if __name__ == "__main__":
     print(json.dumps(get_realtime(), ensure_ascii=False, indent=2))
     pts = get_minute_data()
     print(f"分时点数: {len(pts) if pts else 0}", pts[:3] if pts else "")
+    closes = get_close_series("usQCOM", 5)
+    print("高通收盘序列:", closes)

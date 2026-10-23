@@ -8,7 +8,7 @@ from .common import Contract
 @dataclass
 class RealtimeQuote(Contract):
     name: str = None        # 名称
-    code: str = None        # 代码（腾讯格式，如 sh603893）
+    code: str = None        # 代码（腾讯格式，如 sh603893；美股为带后缀代码如 QCOM.OQ）
     price: float = None     # 最新价
     prev_close: float = None  # 昨收
     open: float = None      # 今开
@@ -19,6 +19,11 @@ class RealtimeQuote(Contract):
     low: float = None       # 最低
     volume: float = None    # 成交量（手）
     amount: float = None    # 成交额（亿元）
+    pe_ttm: float = None    # 市盈率TTM（亏损/缺失为 None；美股为延迟行情口径）
+    pe_dynamic: float = None  # 市盈率（动，单季年化，仅A股）
+    pe_static: float = None   # 市盈率（静，上年年报，仅A股）
+    pb: float = None          # 市净率（仅A股；美股/港股该位置是公司英文名，解析为 None）
+    market_cap: float = None  # 总市值（A股亿元¥；美股亿美元$）
 
     def is_complete(self) -> bool:
         """关键字段齐全（停牌/异常行情时可用于降级判断）"""
