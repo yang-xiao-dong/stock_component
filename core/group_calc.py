@@ -74,11 +74,12 @@ def build_group_minute(minute_map, prev_closes, shares=None, principal=0.0):
 
 
 def build_group_kline(kline_map, principal, max_points=None):
-    """组内日K（绝对 ¥）：组合市值蜡烛 + 个股持市值线
+    """组内日K（绝对 ¥）：组合市值蜡烛 + 个股持市值线（附各股自身日K）
 
     kline_map: {code: [{"date","open","close","high","low"}, ...]}（前复权）
     返回 {"principal", "dates", "candles":[{date,open,high,low,close}...单位¥],
-          "stocks": [{"code", "data": [持市值¥|None...]}], "shares": {code: 份额}}
+          "stocks": [{"code", "data": [持市值¥|None...], "bars": [各股自身日K]}],
+          "shares": {code: 份额}}
     """
     empty = GroupKline(principal=principal).to_dict()
     if not kline_map:
@@ -102,13 +103,17 @@ def build_group_kline(kline_map, principal, max_points=None):
             close=sum(shares[c] * own[c][d]["close"] for c in present),
         ))
 
-    stocks = [StockSeries(code=c, data=lines[c]) for c in kline_map]
+    stocks = [StockSeries(code=c, data=lines[c],
+                          bars=[KlineBar(**own[c][d]) for d in sorted(own[c])])
+              for c in kline_map]
     if max_points and len(dates) > max_points:
         cut = len(dates) - max_points
         dates = dates[cut:]
         candles = candles[len(candles) - max_points:]
         for s in stocks:
             s.data = s.data[cut:]
+            if s.bars:
+                s.bars = s.bars[-max_points:]
     return GroupKline(principal=principal, dates=dates, candles=candles,
                       stocks=stocks, shares=shares).to_dict()
 

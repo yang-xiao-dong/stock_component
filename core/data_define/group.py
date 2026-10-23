@@ -14,7 +14,8 @@ from .kline import KlineBar
 class StockSeries(Contract):
     """个股序列线（与图中色点对应）"""
     code: str = None
-    data: list = None   # [float|None, ...]
+    data: list = None   # [float|None, ...] 持市值¥（与 dates 对齐）
+    bars: list = None   # 该股自身日K [{date,open,close,high,low}, ...]（副面板迷你蜡烛用；旧数据无此字段）
 
 
 @dataclass

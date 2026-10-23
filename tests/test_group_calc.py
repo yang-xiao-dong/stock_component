@@ -79,6 +79,26 @@ def test_kline_trim():
     assert len(out["stocks"][0]["data"]) == 5
 
 
+def test_kline_stock_bars():
+    # 每只股票附带自身日K（OHLC 原样传递）；max_points 截尾时 bars 同步取尾部
+    k = {
+        "a": [{"date": "1", "open": 10, "close": 11, "high": 12, "low": 9},
+              {"date": "2", "open": 11, "close": 13, "high": 14, "low": 10.5},
+              {"date": "3", "open": 13, "close": 12, "high": 13.5, "low": 11.5}],
+        "b": [{"date": "1", "open": 20, "close": 20, "high": 21, "low": 19},
+              {"date": "2", "open": 20, "close": 22, "high": 23, "low": 20},
+              {"date": "3", "open": 22, "close": 21, "high": 22.5, "low": 20.5}],
+    }
+    out = group_calc.build_group_kline(k, 10000)
+    sa = [s for s in out["stocks"] if s["code"] == "a"][0]
+    assert len(sa["bars"]) == 3
+    assert sa["bars"][1]["date"] == "2"
+    assert near(sa["bars"][1]["high"], 14) and near(sa["bars"][2]["close"], 12)
+    cut = group_calc.build_group_kline(k, 10000, max_points=2)
+    sb = [s for s in cut["stocks"] if s["code"] == "b"][0]
+    assert len(sb["bars"]) == 2 and sb["bars"][-1]["date"] == "3"
+
+
 def test_contribution_yuan():
     rt = {"a": {"name": "A", "price": 11, "prev_close": 10, "change_pct": 10.0},
           "b": {"name": "B", "price": 19.6, "prev_close": 20, "change_pct": -2.0}}
