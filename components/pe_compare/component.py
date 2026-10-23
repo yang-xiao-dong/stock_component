@@ -91,7 +91,7 @@ class PeCompareApi:
 class PeCompareComponent(Component):
     id = "pe_compare"
     title = "PE对比"
-    embed_height = 380
+    embed_height = 500
 
     def create_api(self, scheduler=None):
         return PeCompareApi(scheduler=scheduler)

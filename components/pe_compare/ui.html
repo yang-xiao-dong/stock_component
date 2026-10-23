@@ -46,8 +46,10 @@
 
 <script src="../../assets/shared.js"></script>
 <script>
-/* PE对比：各股PE折线 + 参照（高通）虚线；表格给当前PE/分位/中位 */
-const COLORS = ['#4fc3f7', '#ffd54f', '#f06292', '#9575cd', '#4db6ac', '#ff8a65'];
+/* PE对比：各股PE折线 + 参照（高通）虚线；表格给当前PE/分位/中位
+   调色板与组合组件一致，同一只股票跨组件颜色相同 */
+const COLORS = ['#5b8def','#ff8a65','#ba68c8','#4dd0e1','#aed581',
+                '#ffd54f','#f06292','#7986cb','#fff176','#4db6ac'];
 const REF_COLOR = '#ffffff';
 
 let latestBoard = null;
@@ -122,7 +124,7 @@ function drawChart(board) {
   }
   // 对比组实线
   all.filter(i => !i.dashed).forEach(item => {
-    strokeSeries(ctx, item.series.points.map(p => [x(toDate(p.date).getTime()), y(p.pe)]), item.color, 1.5);
+    strokeSeries(ctx, item.series.points.map(p => [x(toDate(p.date).getTime()), y(p.pe)]), item.color, 1.3);
   });
 }
 
