@@ -19,11 +19,12 @@ class GroupApi:
 
     def __init__(self, scheduler=None):
         self._lock = threading.Lock()
-        self._realtime = {}   # {code: rt}
-        self._minute = None   # build_group_minute 结果（¥）
-        self._kline = None    # build_group_kline 结果（¥）
-        self._shares = None   # 建仓份额 {code: shares}（日K窗口首日开盘价均分买入）
-        self._entry = None    # 建仓价 {code: price}
+        self._realtime = {}       # {code: rt}
+        self._minute = None       # build_group_minute 结果（¥）
+        self._kline = None        # build_group_kline 结果（¥）
+        self._kline_cache = {}    # code -> 最近一次成功抓取的日K（本轮失败沿用，避免组合缩水）
+        self._shares = None       # 建仓份额 {code: shares}（日K窗口首日开盘价均分买入）
+        self._entry = None        # 建仓价 {code: price}
 
         self.refresh_realtime()
         if scheduler:
@@ -61,20 +62,23 @@ class GroupApi:
         codes = [s["code"] for s in STOCKS]
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
             fetched = dict(zip(codes, ex.map(lambda c: data_source.get_kline(c, KLINE_DAYS), codes)))
-        kmap = {c: v for c, v in fetched.items() if v}
-        if not kmap:
-            return
-        data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
-        new_entry = {c: bars[0]["open"] for c, bars in kmap.items() if bars}
+        # 合并缓存：本轮抓取失败的股票沿用最近一次良好日K
         with self._lock:
+            merged = dict(self._kline_cache)
+        for c, bars in fetched.items():
+            if bars:
+                merged[c] = bars
+        # 集齐全部股票才重算组合：部分数据会把本金错分给少数股票
+        # （如图表只剩一半股票、每只份额被放大），宁可沿用上一版完整结果
+        if any(c not in merged for c in codes):
+            return
+        kmap = {c: merged[c] for c in codes}
+        data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
+        with self._lock:
+            self._kline_cache = merged
             self._kline = data
-            # 合并而非整体覆盖：单只日K偶发抓取失败时保留其旧份额，避免总值/盈亏跳变
-            shares = dict(self._shares or {})
-            shares.update(data["shares"])
-            entry = dict(self._entry or {})
-            entry.update(new_entry)
-            self._shares = shares
-            self._entry = entry
+            self._shares = data["shares"]
+            self._entry = {c: kmap[c][0]["open"] for c in codes}
 
     # ---------- JS 接口 ----------
 
