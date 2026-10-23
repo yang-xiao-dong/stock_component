@@ -108,20 +108,35 @@ def get_realtime_batch(codes):
         return {}
 
 
+def _get_simple_kline(code, count, period="day"):
+    """备用日K端点 /appstock/app/kline/kline（不复权）。
+    fqkline 端点上游故障（如 2026-10 全线 501）时的降级路径；美股此端点只回
+    首尾两根标记，不可用，仅作 A/港股降级。"""
+    data = _get_chart_data("/appstock/app/kline/kline",
+                           {"param": f"{code},{period},,,{count}"})
+    return (data.get(code) or {}).get(period) or []
+
+
 def get_kline(code=CODE, count=60, period="day"):
     """返回日K线 [{"date","open","close","high","low"}, ...] 前复权，失败返回 None"""
+    rows = None
     try:
         data = _get_chart_data("/appstock/app/fqkline/get", {
             "param": f"{code},{period},,,{count},qfq",
         })[code]
         rows = data.get("qfq" + period) or data.get(period)
-        return [
-            KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
-                     high=float(row[3]), low=float(row[4])).to_dict()
-            for row in rows if len(row) >= 5
-        ]
     except Exception:
+        rows = None
+    if not rows and not code.startswith("us"):
+        # 降级：备用端点（不复权，分红除权日会有小幅跳变，好过无数据）
+        rows = _get_simple_kline(code, count, period)
+    if not rows:
         return None
+    return [
+        KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
+                 high=float(row[3]), low=float(row[4])).to_dict()
+        for row in rows if len(row) >= 5
+    ]
 
 
 def get_minute_data(code=CODE):
@@ -164,6 +179,8 @@ def get_close_series(code, count=250):
             data = _get_chart_data("/appstock/app/fqkline/get",
                                    {"param": f"{code},day,,,{count},"})
             rows = (data.get(code) or {}).get("day") or []
+            if not rows:
+                rows = _get_simple_kline(code, count)
         out = []
         for row in rows:
             if len(row) >= 3:
