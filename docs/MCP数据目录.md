@@ -1,0 +1,187 @@
+# MCP 数据目录（接口参考，供选数决策）
+
+本目录列出 AI 助手当前可调用的金融数据 MCP 工具：能取什么、参数怎么传、返回长什么样、有什么坑、以及与本项目数据库的对应关系。**你按工具名提需求即可，由 AI 发起调用**；「逐步补齐」时每轮落盘到库，进度不丢失。
+
+标注说明：**[实测]** = 2026-10-24 数据核验时真实调用并交叉核对过；其余按工具契约描述。配额特征：同花顺(hexin)多数支持 `codes` 逗号批量，一次调用取多主体；Wind 多为「单标的 + 自然语言问题」式；两者都按「调用次数」计，返回体大小也有限，优先批量。
+
+---
+
+## 0. 速查总览
+
+| 数据域 | 首选工具 | 覆盖 | 批量 | 历史 | 关键限制 |
+|---|---|---|---|---|---|
+| A股日频行情（收盘/复价/换手） | hexin get_stock_performance | 任意区间 | ✔ | ✔ 5种复权 | 9 个固定指标 |
+| A股日K（开高低收，分钟~年） | wind get_stock_kline | 任意区间 | ✘ 单标的 | ✔ 复权可选 | 单标的问题式 |
+| 实时快照（当日） | hexin stock_highfreq_quotes | 当日 | ✔ | ✘ | 仅交易日日内 |
+| 估值截面（PE/PB/PS/市值） | hexin get_stock_summary | 单日 | ✔ | ✘ 逐日可拼 | **PB 口径与腾讯/Wind 不同[实测]** |
+| 估值 + 历史分位数 | wind get_stock_fundamentals | 单日 | ✘ | 分位数✔ | 问题式单标的 |
+| 财务指标（13 种，报告期序列） | hexin get_stock_financials | 报告期 | ✔ | ✔ | 序列模式营收字段为 null[实测] |
+| 公司档案 / 行业 / 主营 | hexin get_stock_info；wind get_stock_basicinfo | — | hexin✔ | — | 问财补充只覆盖第一主体[实测] |
+| 股本 / 股东 / 实控人 | hexin get_stock_shareholders；wind get_stock_equity_holders | 时点 | ✔ | 报告期 | top_holders 逐位计费 |
+| 公司事件（分红/解禁/增减持/ST/诉讼） | wind get_stock_events | 结构化记录 | ✘ | ✔ | 不含公告全文 |
+| 风险指标（Beta/波动/回撤/VaR/夏普） | wind get_risk_metrics；hexin get_risk_indicators | 回看窗口 | hexin✔ | — | hexin 夏普通常 null[实测] |
+| 技术指标（MACD/KDJ/RSI/BOLL/形态） | wind get_stock_technicals | 派生 | ✘ | ✔ | — |
+| 指数 K 线 / 估值 / 分位 | wind-index get_index_kline / get_index_fundamentals | 任意区间 | ✘ | ✔ | hexin index_data 仅逐日截面 |
+| 板块聚合（整体法 PE 等） | hexin-index sector_data | 单日 | 按板块ID | ✘ | 名称路径仅当日截面 |
+| 公告原文 / 财经新闻检索 | wind-docs get_company_announcements / get_financial_news | 检索式 | — | ✔ | top_k≤20，语义检索 |
+| 宏观时序（EDB） | wind-economic query_economic_indicator_data | 序列 | 多指标 | ✔ | 指标需先 search 定位 |
+| 港美股行情 / 财务 | wind-global-stock（全）；hexin global-stock（行情） | — | ✘/✔ | ✔ | **hexin 美股财务报告期错位[实测弃用]** |
+| 中文金融资讯垂搜 | finance-search | 检索式 | — | ✔ | 官方档加日期窗口会丢无日期记录 |
+| 美股披露（EDGAR 全文） | sec-search | 2001 起 | — | ✔ | 布尔/短语/CIK 过滤 |
+| 工商/司法/股权穿透 | tianyancha 系列 | — | — | ✔ | 与行情分析关系较远 |
+
+---
+
+## 1. 同花顺 hexin-stock（A 股个股）
+
+### 1.1 get_stock_summary — 估值截面 **[实测]**
+| 参数 | 说明 |
+|---|---|
+| codes | 逗号批量，同花顺代码如 `603893.SH,300458.SZ` |
+| date | 单个日期 YYYY-MM-DD |
+| indicators | 字典：`市盈率TTM,市净率,总市值,市销率TTM,PEG`；问财补充：`市现率,企业价值,EBITDA`（列名由问财决定） |
+
+返回骨架：`{"结果":[{"证券代码":"603893.SH","市盈率TTM":66.25,"市净率":25.56,"总市值":90623840370.0,"市销率TTM":17.32}],"indicator_ids":{...}}`
+坑：**PB 与腾讯/Wind 系统性不一致**——实测其净资产基准约为上年末（兆易/中科/瑞芯三点精确验证），PE/PS/市值则与腾讯精确一致。总市值单位为元。
+用途：PE-TTM 交叉校验、PS 反推 TTM 营收。
+
+### 1.2 get_stock_financials — 财务指标（单期或报告期序列） **[实测]**
+| 参数 | 说明 |
+|---|---|
+| codes | 逗号批量 |
+| indicators | `归母净利润,净利润,营业总收入,ROE,净资产收益率,销售毛利率,资产负债率,每股收益TTM,单季度归母净利润,单季度净利润,单季度营业总收入,净利润同比,营业收入同比,单季度净利润同比` |
+| report_date | 单个报告期截面（如 `2025-12-31`） |
+| start_date + end_date + period | 报告期序列（period=日/周/月/季/年，默认季） |
+
+返回骨架：`{"结果":[{"证券代码":"603893.SH","数据":[{"日期":"2026-06-30","归母净利润":859028900.86,"ROE":18.46,"销售毛利率":45.79,"每股收益TTM":3.23}]}],"indicator_ids":{...}}`
+坑：**序列模式下「营业总收入」实测为 null**（单期截面可取）；ROE/同比为报告期累计口径（未年化），indicator_ids 标明具体口径码；金额单位元。
+用途：TTM 自算、财务时序分析；一次调用可取 10 标的 × 多报告期，**配额效率最高**。
+
+### 1.3 get_stock_info — 公司档案 **[实测]**
+参数：codes 批量；date。字典指标 `公司中文名,证券简称,成立日期,上市日期`；问财补充 `所属行业,主营业务,上市板块,所属申万/中信/证监会/同花顺行业,竞争对手`。
+坑：问财补充**只覆盖 codes 里第一个主体**（实测）；行业为三级全路径字符串。
+用途：代码↔名称核对（AGENTS.md 历史坑的核验工具）、行业归属。
+
+### 1.4 get_stock_shareholders — 股本与股东 **[实测]**
+| 参数 | 说明 |
+|---|---|
+| codes | 批量 |
+| date | 给 indicators 时必填（股本是时点数） |
+| indicators | `总股本,流通A股,自由流通股,实际控制人`；问财补充：前十大持股合计等 |
+| top_holders | 前 N 位股东明细（每位一次调用，N=10 约耗 20 单元） |
+
+返回骨架：`{"股本":[{"证券代码":"603893.SH","总股本":423396750.0,"流通A股":423348750.0,"实际控制人":"励民"}]}`
+坑：不含单股东持股数量/比例。用途：市值=价×股本 逻辑校验、股本变动监测。
+
+### 1.5 get_stock_performance — 日频行情序列 **[实测]**
+| 参数 | 说明 |
+|---|---|
+| codes | 批量；A股与指数代码；港股须 4 位（0700.HK） |
+| start_date / end_date | 区间 |
+| indicators | `开盘价,最高价,最低价,收盘价,成交量,成交额,涨跌幅,换手率,均价` |
+| adjust | `不复权(默认)/前复权/后复权/前复权(现金分红)/后复权(现金分红)` |
+| drop_non_trading_days | 默认 true（沪深日历） |
+
+返回：`{"结果":[{"证券代码":"...","数据":[{"日期":"2026-10-23","收盘价":214.04}]}],"复权方式":"不复权"}`
+坑：场外基金(.OF)不走此端点。用途：本项目腾讯行情的**独立校验源**（实测 10 股×6 日全等）。
+
+### 1.6 stock_highfreq_quotes — 实时快照 / 分钟K [未实测]
+`data_mode=real_time`（当日：最新价/涨跌幅/总市值/量额/换手/开高低，批量）；`highfreq` 需 start_time+end_time+interval(1~60 分钟)。仅交易日日内，无历史。
+
+### 1.7 get_risk_indicators — 风险指标 **[实测]**
+参数：codes 批量、date、`BETA,贝塔,夏普比率,质押比例`。24 个月贝塔；夏普当日无值返回 null（实测全组 null）。
+
+### 1.8 search_stocks — 问财自然语言 [部分实测]
+参数：query（自然语言）、domain=stock/fund。既能筛股也能取指定标的的字段；**匹配不上的条件被静默丢弃**，必须核对返回列是否覆盖所问；列名自带口径与报告期后缀；债券域不支持；一致预期/分部收入取不到。
+
+---
+
+## 2. 同花顺 hexin-index / hexin-global-stock
+
+### 2.1 sector_data — 板块聚合 **[实测]**
+参数：code=**板块ID**（`00103510801` 半导体·同花顺行业、`001005010` 全部A股、`001005260` 上证50；指数代码不支持）或板块名称（走问财、仅当日截面）；date；include_constituents。
+返回：`{"成份股个数":190,"总市值合计":1.15e13,"整体法PE_TTM":48.98,"整体法PE口径":"Σ市值/Σ净利润，仅计入PE>0的143家…"}`
+用途：行业估值锚、组内估值对比基准。
+
+### 2.2 index_data / index_highfreq_quotes — 指数截面 [未实测]
+index_data：单日 `收盘价,开盘价,最高价,市盈率,市盈率中位数,市净率`（PE 口径上游未说明）；highfreq：指数实时/分钟K。日频点位序列请用 get_stock_performance 传指数代码，或走 wind-index。
+
+### 2.3 global_stock_quotes — 港美股日频行情 **[实测]**
+参数：codes（美股 `QCOM.O`、港股 `0700.HK`）、区间、`开盘价,最高价,最低价,收盘价,成交量,成交额,涨跌幅`。不做非交易日过滤（沪深日历不适用于港美股）。实测与腾讯美股收盘 8/8 全等。
+
+### 2.4 global_stock_financial — 港美股财务 **[实测·弃用]**
+美股 `营业收入,净利润,总资产`；港股 `营业收入,总资产`；币种是取数条件（港股人民币会 null）。**实测美股按日历报告期错位（FY2025 对不上），本项目弃用，港美股财务以 Wind 为准。**
+
+> 另有 hexin-bond（债券档案/估值/转债）、hexin-fund（基金档案/净值/持仓/问财选基），与本项目当前数据域无关，略。
+
+---
+
+## 3. 万得 wind-stock（A 股个股，问题式单标的为主）
+
+### 3.1 get_stock_fundamentals — 财务 + 估值 + 分位数 **[实测]**
+参数：question 自然语言（实体 + 指标 + 日期/报告期）。覆盖三大报表科目、财务比率（ROE/毛利率/资产负债率/速动）、行业专项（净息差/不良率）、估值（PE/PB/PS-TTM、股息率、总市值/流通市值**及历史分位数**）。
+实测：PE/PB/市值与腾讯一致（PB 与同花顺不一致，Wind 站腾讯侧）。
+用途：第三源仲裁、估值分位。
+
+### 3.2 get_stock_kline — K 线 [未实测]
+参数：windcode、begin_date/end_date、period（1分钟~年，默认日K）、aftype（0前复权/1后复权/2不复权）、count（可只取头/尾 N 根）、issusp（含停牌）。返回开高低收量额换手均价。**本项目腾讯链路的独立备源**（腾讯 fqkline 故障时的核对渠道）。
+
+### 3.3 get_stock_events — 公司事件 [未实测]
+参数：question（实体 + 事件类型 + 时间范围）。覆盖分红派息、增发配股、并购重组、大股东增减持、限售解禁、ST 变动、违规处罚、诉讼——**结构化记录**（金额、日期），不含公告全文。用途：PE 失真归因（如除权日）、事件驱动分析。
+
+### 3.4 其余（均问题式，详见工具契约）
+- get_stock_price_indicators：~200 个当日快照指标枚举（各周期涨跌幅、主力资金流、均线、MACD/KDJ/RSI、52 周高低、股息率…）
+- get_stock_equity_holders：股本结构、十大股东/流通股东及变动、机构持股、实控人、解禁时间表
+- get_stock_basicinfo：简称/上市板/行业/概念/指数成份/工商/主营/风险警示状态
+- get_risk_metrics：Beta（标准/去杠杆/去税率）、Jensen Alpha、波动率（100周/24月/60月）、夏普、最大回撤、VaR（参数/历史）、财务安全比率、相关系数
+- get_stock_technicals：多周期涨跌、相对基准、趋势/超买超卖/能量/量价/形态指标
+- get_stock_quote：分钟级序列；search_stocks：自然语言选股
+
+---
+
+## 4. 万得 wind-index / wind-docs / wind-economic / wind-global-stock
+
+- **get_index_kline** [未实测]：指数点位序列（分钟~年），如科创50 `000688.SH`、中证全指半导体。**基准对比、超额收益分析的关键工具**。
+- get_index_fundamentals：指数加权 PE/PB/股息率及分位；get_index_basicinfo：编制档案；get_index_price_indicators/technicals/quote：快照/派生/分钟。
+- **wind-docs get_company_announcements** **[实测]**：公告原文语义检索（公司 + 类型 + 时间），返回 title/date/doc_type/content/url；配套 get_financial_news（新闻，不含公告与研报）。用途：业绩异动归因（如中科蓝讯扣非公告即出自此）。
+- **wind-economic**：search_economic_indicator 定位指标 → query_economic_indicator_data 取序列；支持 targetMagnitude/targetFrequency/targetCurrency 跨指标对齐换算（跨国对比、统一量级时用）。
+- **wind-global-stock** **[fundamentals 实测]**：港美股档案/股本/事件（IPO/增发/分红）/基本面（含 PE 历史分位）/日K/快照/分钟/技术/筛选。QCOM FY2025 营收/净利与 10-K 一致（实测）。
+- 另有 wind-fund（基金净值/业绩评价/持仓/档案/筛选）、wind-bond（债券档案/行情/发行人），当前无关，略。
+
+---
+
+## 5. 其他数据源（简列）
+
+- **finance-search**：中文金融站点向量垂搜，每条标注来源档位（official/official_derived/trusted_media）与原文 url；带日期窗口会丢弃无 publish_time 的记录（官方档仅 11–42% 有日期）——时效性问题要带窗口，找原文不带窗口。
+- **sec-search**：2001 年以来美股 EDGAR 全文检索（AND/OR/NOT、短语、通配、CIK/表单类型/日期过滤），返回申请元数据与直链。
+- **tianyancha 系列**：工商登记、股权穿透、司法风险、失信/被执行、质押、招投标等 40+ 工具——做上市公司**体外**主体（股东、子公司、对手方）排查时才需要，行情分析本身用不上。
+
+---
+
+## 6. 与本项目数据库的映射
+
+| MCP 数据 | 项目落点 | 说明 |
+|---|---|---|
+| A股日K/收盘历史 | `dataset/market_point`（kind=kline/close） | **不需要 MCP**：`python scripts/backfill_market.py` 腾讯直连回补，幂等落盘 |
+| 财务/档案/股本/Beta/扣非 | `fundamental` 表（schema v2） | 已导入 2026-10-23 截面 11 条；**历史报告期序列**可取但需先决定按报告期存行的结构 |
+| 个股历史 PE-TTM 日序列 | 无处可落 | 上游无现成序列（Wind 可逐日截面拼，代价高）；维持「当前 EPS 折算」并接受跨财报台阶 |
+| 指数/板块基准历史 | 需新增表 | wind-index 可取任意区间 |
+| 事件（分红/解禁/增减持） | 需新增域 | wind get_stock_events 结构化返回 |
+| 宏观 EDB | 需新增域 | wind-economic 序列 |
+| 历史分时 / 逐笔报价 | **永久缺失** | 上游不提供；库设计文档已注明不可伪造 |
+
+## 7. 逐步补齐路线（按性价比排序，每轮落盘后可续）
+
+1. ~~更深行情~~ **已完成**：`stock_api` 已支持 `end` 参数向前翻页；全部 A 股 kline+close 补到各自上市日，高通 close 补到 2014-02-06。日常无需再跑（新交易日由应用自动采集），如需更深目标日：`python scripts/backfill_market.py --until 2010-01-01`。
+2. **财务报告期全历史**：一次 hexin 调用可拉 10 标的 × 多年报告期 → 先定 fundamental 按报告期存行的方案。
+3. **基准指数历史**：科创50 / 半导体指数 K 线 + 加权 PE 分位（wind-index）→ 新表。
+4. **事件历史**：分红（复权台阶核对）、解禁、增减持 → 新域。
+5. **宏观锚**：十年国债、PMI、半导体销售额等 → 新域。
+
+## 8. 已落库记录
+
+| 日期 | 内容 |
+|---|---|
+| 2026-10-24 | `fundamental` 表建立（schema v2 追加）并导入 11 条三源核验截面（见《数据核验与补充_2026-10-23》） |
+| 2026-10-24 | 回补 kline(qfq)+close 各 800 根 × 11 标的（腾讯直连，不耗 MCP）；清理了美股日K端点的 2 根残缺标记版本 |
+| 2026-10-24 | 深度回补：`stock_api` 增加 `end` 翻页参数（离线回归已补测），回补至各股上市日（全志 2015-05-15、兆易 2016-08-18、乐鑫/晶晨 2019、瑞芯微/恒玄 2020、炬芯 2021、翱捷/中科 2022、龙迅 2023），高通 close 至 2014-02-06；可回放交易日 858 → 3290；深段抽查全志 2015 上市周 6/6 与同花顺全等 |
