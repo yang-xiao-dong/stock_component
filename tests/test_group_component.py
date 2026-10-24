@@ -41,6 +41,8 @@ class _Stub:
                                 if code in self.minute_ok else None)
         self.get_kline = (lambda code, count=60: _bars(self.base) if code in self.ok else None)
         self.get_mode = lambda: {"mode": "live", "date": None}
+        self.context_key = lambda: (0, "live", None)
+        self.get_config = lambda name, default: default
 
 
 def _make_api(stub):
@@ -52,6 +54,14 @@ def test_partial_kline_never_shrinks_group():
     # 只有 2 只取到日K → 拒绝重建，图表保持无数据，而不是 2 只的组合
     api = _make_api(_Stub(ALL[:2]))
     assert api.get_group_kline() is None and api._kline is None
+
+
+def test_partial_quotes_do_not_replace_complete_group():
+    api = _make_api(_Stub(ALL))
+    previous = dict(api._realtime)
+    group_component.data_source = _Stub(ALL[:2])
+    api.refresh_realtime()
+    assert api._realtime == previous
 
 
 def test_full_kline_then_partial_cycle_discards_whole_round():
@@ -97,6 +107,7 @@ def test_rebuild_deterministic():
 def test_minute_atomic_round():
     # 分时同理：缺一只整轮作废（合计线不被低估），集齐才更新
     api = _make_api(_Stub(ALL, minute_ok=ALL[:4]))
+    api.refresh_kline()
     api.refresh_minute()
     assert api._minute is None
     group_component.data_source = _Stub(ALL, minute_ok=ALL)

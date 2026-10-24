@@ -35,6 +35,19 @@ def test_from_dict_tolerant():
     assert bar.close is None
 
 
+def test_history_contracts_roundtrip_and_tolerance():
+    batch = dd.MarketBatch(code="sh603893", kind="close", adjustment="none",
+                           rows=[dd.ClosePoint(date="2026-09-22", close=10).to_dict()])
+    assert dd.MarketBatch.from_dict(batch.to_dict()) == batch
+    replay = dd.ReplayContext(date="2026-09-22", datasets={"close:sh603893": "id"},
+                              config={"PRINCIPAL": 100000}, missing=["minute:sh603893"])
+    assert dd.ReplayContext.from_dict(replay.to_dict()) == replay
+    assert dd.ClosePoint.from_dict({"date": "2026-09-22", "unknown": 10}).close is None
+    assert dd.HistoryStatus.from_dict({"mode": "offline"}).missing is None
+    preference = dd.DataModePreference(mode="offline", date="2026-09-22")
+    assert dd.DataModePreference.from_dict(preference.to_dict()) == preference
+
+
 def test_component_layout_contract():
     layout = dd.ComponentLayout(order=['stock', 'group', 'analysis'])
     assert dd.ComponentLayout.from_dict(layout.to_dict()).order == layout.order

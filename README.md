@@ -25,7 +25,7 @@ python -m builder --version 1.1.0
 python -m builder --dist-dir D:\release
 ```
 
-打包器会自动发现并收集 `components/` 下的组件及其界面资源。EXE 保存的快照位于 `%LOCALAPPDATA%\StockWidget\data\snapshots`，升级或移动 EXE 不会丢失。目标电脑需为 Windows 10/11，并具备 Microsoft Edge WebView2 Runtime（通常已随系统安装）。
+打包器会自动发现并收集 `components/` 下的组件及其界面资源。EXE 保存的历史数据库位于 `%LOCALAPPDATA%\StockWidget\data\market.sqlite3`，旧快照会自动导入并保留，升级或移动 EXE 不会丢失。目标电脑需为 Windows 10/11，并具备 Microsoft Edge WebView2 Runtime（通常已随系统安装）。
 
 ### 自动打包与发布（GitHub）
 
@@ -49,7 +49,7 @@ python -m builder.release  # 本地查看功能计数和下一版本，不执行
 - **PE对比组件**：参照公司（默认高通 `usQCOM`，白色虚线）+ 对比组近一年历史PE折线（按当前EPS-TTM折算），表格给出当前PE、一年分位（≥70% 偏高 / <30% 偏低）与中位数，直接回答“当前PE是高还是低”。对比名单与窗口在 `config.PE_COMPARE`；计算纯函数在 `core/pe_calc.py`，界面在 `components/pe_compare/`。
 - 单窗口上下堆叠全部组件，窗口内滚动查看；拖标题栏移动窗口，拖边缘缩放，置顶显示
 - 顶栏「排序」支持组件上移、下移和恢复默认；顺序自动保存，重启后保留，调整时保留组件当前状态。
-- **离线快照**：顶栏「存快照」保存当日整组数据（行情+分时+日K）到 `data/snapshots/`，「离线」可切换回看任意已存交易日的完整收盘状态，组件整体重载；收盘时刻到点自动保存（幂等，不重复不覆盖）
+- **历史数据库与离线回放**：在线取得的行情、分时、日K和PE收盘序列自动存入 SQLite；顶栏「保存当前」强制刷新并保存所有组件所需数据。「离线」按日期读取固定历史版本，重启断网后仍可计算；缺失项目明确提示。历史股票组、本金和窗口参数随回放保存，旧 JSON 快照自动导入并原样保留。表结构、迁移和备份命令见 [数据库设计](docs/数据库设计.md)。
 
 ## 目录结构
 
@@ -63,7 +63,8 @@ G:\stock\
 │   ├── window_utils.py     #   无边框窗口控制
 │   ├── scheduler.py        #   统一后台刷新调度
 │   ├── http_server.py      #   本地静态服务（同源嵌入组件）
-│   └── data_define/        #   数据契约（字段唯一定义 + 收盘快照）
+│   ├── history/            #   SQLite仓储、采集/回放、迁移与备份命令
+│   └── data_define/        #   数据契约（字段唯一定义 + 旧快照兼容）
 ├── components/             # 组件层（自动发现）
 │   ├── base.py             #   Component 基类 + AppApi 路由 + assemble 装配
 │   ├── stock/              #   组件1：个股视图

@@ -8,6 +8,7 @@ from datetime import datetime
 import requests
 
 from core.data_define import KlineBar, MinutePoint, RealtimeQuote
+from core.data_define.history import ClosePoint, MarketBatch
 
 CODE = "sh603893"
 HEADERS = {
@@ -54,13 +55,17 @@ def _parse_fields(f):
     30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
     39市盈率TTM 45总市值 46市净率(仅A股) 52市盈率动(仅A股) 53市盈率静(仅A股)
     """
+    quote_time = f[30].strip()
+    if "-" in quote_time:
+        # 腾讯美股返回 ISO 日期时间，A股返回紧凑时间；契约统一为市场本地十四位时间。
+        quote_time = datetime.fromisoformat(quote_time).strftime("%Y%m%d%H%M%S")
     return RealtimeQuote(
         name=f[1],
         code=f[2],
         price=float(f[3]),
         prev_close=float(f[4]),
         open=float(f[5]),
-        time=f[30],
+        time=quote_time,
         change=float(f[31]),
         change_pct=float(f[32]),
         high=float(f[33]),
@@ -77,20 +82,16 @@ def _parse_fields(f):
 
 def get_realtime(code=CODE):
     """返回实时行情 dict，失败返回 None"""
-    url = f"https://qt.gtimg.cn/q={code}"
-    try:
-        r = session.get(url, timeout=5)
-        r.encoding = "gbk"
-        m = re.search(r'"([^"]+)"', r.text)
-        if not m:
-            return None
-        return _parse_fields(m.group(1).split("~"))
-    except Exception:
-        return None
+    return get_realtime_batch([code]).get(code)
 
 
 def get_realtime_batch(codes):
     """批量实时行情 {code: dict}，一次请求取整组；失败返回 {}"""
+    return {code: batch.rows[0] for code, batch in get_quote_batches(codes).items()}
+
+
+def get_quote_batches(codes):
+    """保留原始字段，按响应变量名匹配股票，缺一只也不会导致后续代码错位。"""
     if not codes:
         return {}
     url = "https://qt.gtimg.cn/q=" + ",".join(codes)
@@ -98,49 +99,73 @@ def get_realtime_batch(codes):
         r = session.get(url, timeout=6)
         r.encoding = "gbk"
         out = {}
-        # 返回顺序与请求顺序一致，按位置配对
-        for code, raw in zip(codes, re.findall(r'"([^"]+)"', r.text)):
+        for code, raw in re.findall(r'v_([^=\s]+)="([^"]*)"', r.text):
+            if code not in codes:
+                continue
             f = raw.split("~")
             if len(f) > 37:
-                out[code] = _parse_fields(f)
+                try:
+                    quote = _parse_fields(f)
+                    quote["code"] = code
+                    out[code] = MarketBatch(code=code, kind="quote", rows=[quote], raw=raw)
+                except (ValueError, IndexError):
+                    continue
         return out
     except Exception:
         return {}
 
 
-def _get_simple_kline(code, count, period="day"):
+def _get_simple_kline(code, count, period="day", end=None):
     """备用日K端点 /appstock/app/kline/kline（不复权）。
     fqkline 端点上游故障（如 2026-10 全线 501）时的降级路径；美股此端点只回
-    首尾两根标记，不可用，仅作 A/港股降级。"""
+    首尾两根标记，不可用，仅作 A/港股降级。end 传 YYYY-MM-DD 取该日（含）之前。"""
     data = _get_chart_data("/appstock/app/kline/kline",
-                           {"param": f"{code},{period},,,{count}"})
+                           {"param": f"{code},{period},,{end or ''},{count}"})
     return (data.get(code) or {}).get(period) or []
 
 
-def get_kline(code=CODE, count=60, period="day"):
-    """返回日K线 [{"date","open","close","high","low"}, ...] 前复权，失败返回 None"""
+def get_kline(code=CODE, count=60, period="day", end=None):
+    """返回日K线 [{"date","open","close","high","low"}, ...] 前复权，失败返回 None。
+
+    end 传 YYYY-MM-DD 时取该日（含）之前的窗口，供历史回补向前翻页。"""
+    batch = get_kline_batch(code, count, period, end)
+    return batch.rows if batch else None
+
+
+def get_kline_batch(code=CODE, count=60, period="day", end=None):
     rows = None
+    adjustment = "qfq"
     try:
         data = _get_chart_data("/appstock/app/fqkline/get", {
-            "param": f"{code},{period},,,{count},qfq",
+            "param": f"{code},{period},,{end or ''},{count},qfq",
         })[code]
-        rows = data.get("qfq" + period) or data.get(period)
+        rows = data.get("qfq" + period)
+        if not rows:
+            rows, adjustment = data.get(period), "none"
     except Exception:
         rows = None
     if not rows and not code.startswith("us"):
         # 降级：备用端点（不复权，分红除权日会有小幅跳变，好过无数据）
-        rows = _get_simple_kline(code, count, period)
+        rows = _get_simple_kline(code, count, period, end)
+        adjustment = "none"
     if not rows:
         return None
-    return [
+    bars = [
         KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
                  high=float(row[3]), low=float(row[4])).to_dict()
         for row in rows if len(row) >= 5
     ]
+    return MarketBatch(code=code, kind="kline", adjustment=adjustment, rows=bars,
+                       raw=rows, requested_count=count)
 
 
 def get_minute_data(code=CODE):
     """返回当日分时 [{"time","price","vol"}, ...]，失败返回 None"""
+    batch = get_minute_batch(code)
+    return batch.rows if batch else None
+
+
+def get_minute_batch(code=CODE):
     try:
         data = _get_chart_data("/appstock/app/minute/query", {"code": code})
         minute = data[code]["data"]["data"]
@@ -149,46 +174,54 @@ def get_minute_data(code=CODE):
                       .date().isoformat() if raw_date else None)
         points = []
         for row in minute:
-            t, price, _, vol = row.split(" ")
-            points.append(MinutePoint(time=t[:5], price=float(price),
+            t, price, vol, _ = row.split()
+            t = t.replace(":", "")
+            points.append(MinutePoint(time=f"{t[:2]}:{t[2:4]}", price=float(price),
                                       vol=float(vol), date=trade_date).to_dict())
-        return points
+        return MarketBatch(code=code, kind="minute", rows=points, raw=data[code])
     except Exception:
         return None
 
 
-def get_close_series(code, count=250):
+def get_close_series(code, count=250, end=None):
     """收盘价序列 [{"date","close"}, ...]，供 PE 历史折算（真实收盘价，非复权K线）。
 
     - A股（sh/sz）：fqkline 端点不带 qfq 参数 → 不复权
     - 美股（usXXX）：日K仅支持专用 usfqkline 端点 + 带后缀代码（usQCOM → usQCOM.OQ），
       且仅前复权可用（接口限制，折算误差约等于股息率）；后缀代码由实时行情字段2推导
+    - end 传 YYYY-MM-DD 时取该日（含）之前的窗口，供历史回补向前翻页
     """
+    batch = get_close_batch(code, count, end)
+    return batch.rows if batch else None
+
+
+def get_close_batch(code, count=250, end=None):
     try:
         if code.startswith("us"):
             symbol = code[2:]
             if "." not in symbol:
-                quote = get_realtime(code)
+                quote = get_quote_batches([code]).get(code)
                 if not quote:
                     return None
-                symbol = quote["code"]  # 带后缀，如 QCOM.OQ
+                symbol = quote.raw.split("~")[2]  # 原始供应商代码，如 QCOM.OQ
             data = _get_chart_data("/appstock/app/usfqkline/get",
-                                   {"param": f"us{symbol},day,,,{count},qfq"})
+                                   {"param": f"us{symbol},day,,{end or ''},{count},qfq"})
             rows = (data.get(f"us{symbol}") or {}).get("qfqday") or []
         else:
             data = _get_chart_data("/appstock/app/fqkline/get",
-                                   {"param": f"{code},day,,,{count},"})
+                                   {"param": f"{code},day,,{end or ''},{count},"})
             rows = (data.get(code) or {}).get("day") or []
             if not rows:
-                rows = _get_simple_kline(code, count)
+                rows = _get_simple_kline(code, count, end=end)
         out = []
         for row in rows:
             if len(row) >= 3:
                 try:
-                    out.append({"date": row[0], "close": float(row[2])})
+                    out.append(ClosePoint(date=row[0], close=float(row[2])).to_dict())
                 except (TypeError, ValueError):
                     continue
-        return out or None
+        return MarketBatch(code=code, kind="close", adjustment="qfq" if code.startswith("us") else "none",
+                           rows=out, raw=rows, requested_count=count) if out else None
     except Exception:
         return None
 

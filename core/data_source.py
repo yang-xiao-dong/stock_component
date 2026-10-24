@@ -1,171 +1,167 @@
 # -*- coding: utf-8 -*-
-"""行情数据源：在线（腾讯实时）与离线（本地收盘快照）的统一取数入口。
-
-- 组件一律通过本模块取数，不直接依赖 stock_api，模式对组件透明
-- 模式切换由窗口级 API（components/base.py 的 AppApi）触发，
-  切换后前端重载组件页面即可整体生效
-- 快照结构契约见 core/data_define/snapshot.py
-"""
+"""组件唯一数据入口：在线自动入库，历史回放严格离线。存储实现封装在 core/history。"""
 import os
+import json
+import logging
+import tempfile
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
-from dataclasses import replace
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from config import AUTO_SNAPSHOT, KLINE_DAYS, STOCKS
+from config import AUTO_SNAPSHOT, KLINE_DAYS
 from core import stock_api
-from core.data_define import MarketSnapshot, load_snapshot, save_snapshot, snapshot_path
 from core.data_define.snapshot import SNAPSHOT_DIR
+from core.data_define.history import DataModePreference
+from core.runtime_paths import user_data_path
+from core.history.store import HistoryStore
+from core.history.service import HistoryService
+from core.history.legacy import import_directories, import_snapshot
 
-FETCH_WORKERS = 4
-
-_lock = threading.Lock()
-_snapshot = None   # MarketSnapshot | None（离线模式持有）
-_mode = "live"     # live | offline
-_date = None       # 离线模式对应的快照日期
+_service = None
+_init_lock = threading.Lock()
+_mode_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
-# ---------- 模式管理 ----------
+def initialize():
+    global _service
+    with _init_lock:
+        if _service is None:
+            store = HistoryStore(user_data_path("data", "market.sqlite3"))
+            directories = [SNAPSHOT_DIR]
+            if os.environ.get("LOCALAPPDATA"):
+                directories.append(Path(os.environ["LOCALAPPDATA"]) / "StockWidget" / "data" / "snapshots")
+            import_directories(store, directories)
+            service = HistoryService(store, stock_api)
+            try:
+                preference = DataModePreference.from_dict(json.loads(
+                    store.path.with_name("history_mode.json").read_text(encoding="utf-8")))
+                if preference and preference.mode == "offline":
+                    if not service.set_mode("offline", preference.date):
+                        logger.warning("已保存的离线日期不可用：%s", preference.date)
+            except (OSError, ValueError, TypeError):
+                pass
+            _service = service
+    return _service
+
 
 def get_mode():
-    with _lock:
-        return {"mode": _mode, "date": _date}
+    return _service.mode() if _service else {"mode": "live", "date": None}
+
+
+def context_key():
+    """包括切换代数，同一日期重新加载也会使组件缓存失效。"""
+    return _service.context_key() if _service else (0, "live", None)
+
+
+def get_config(name, default):
+    return _service.config(name, default) if _service else deepcopy(default)
 
 
 def is_offline():
-    with _lock:
-        return _mode == "offline" and _snapshot is not None
+    return get_mode()["mode"] == "offline"
 
 
 def set_mode(mode, date=None):
-    """切换数据模式；offline 需给快照日期或完整文件路径，成功返回 True"""
-    global _snapshot, _mode, _date
-    mode = str(mode)
-    with _lock:
-        if mode == "live":
-            _snapshot, _mode, _date = None, "live", None
-            return True
-        if mode != "offline":
-            return False
+    if mode not in ("live", "offline"):
+        return False
+    if mode == "live" and _service is None:
+        return True
+    service = initialize()
+    if mode == "offline" and date and (os.path.isabs(str(date)) or str(date).endswith(".json")):
         try:
-            snap = load_snapshot(date)
-        except (FileNotFoundError, OSError):
+            date = import_snapshot(service.store, date)
+        except (OSError, ValueError, TypeError, KeyError):
             return False
-        if snap is None:
+    with _mode_lock:
+        if not service.set_mode(mode, date):
             return False
-        _snapshot, _mode, _date = snap, "offline", snap.date
+        target = service.store.path.with_name("history_mode.json")
+        temporary = None
+        try:
+            descriptor, temporary = tempfile.mkstemp(prefix="history-mode-", suffix=".tmp", dir=target.parent)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(DataModePreference(**service.mode()).to_dict(), stream, ensure_ascii=False)
+            os.replace(temporary, target)
+        except OSError as exc:
+            logger.warning("数据模式偏好保存失败（当前切换已生效）：%s", exc)
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.unlink(temporary)
         return True
 
 
 def list_snapshots():
-    """已保存的快照日期列表（yyyy-mm-dd 升序）"""
-    try:
-        return sorted(f[:-5] for f in os.listdir(SNAPSHOT_DIR) if f.endswith(".json"))
-    except FileNotFoundError:
-        return []
+    """兼容原窗口接口；现在返回数据库已有数据的交易日。"""
+    return initialize().store.dates()
+
+
+def get_history_status():
+    return initialize().status()
 
 
 def capture_today(allow_overwrite=True):
-    """抓取当前整组数据（实时+分时+日K）并存为快照，返回 {ok, date, path}
-    allow_overwrite=False 时，目标日期快照已存在则跳过（自动保存防覆盖用）"""
-    codes = [s["code"] for s in STOCKS]
-    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
-        minute = dict(zip(codes, ex.map(stock_api.get_minute_data, codes)))
-        kline = dict(zip(codes, ex.map(lambda c: stock_api.get_kline(c, KLINE_DAYS), codes)))
-    realtime = stock_api.get_realtime_batch(codes)
-    if not realtime:
-        return {"ok": False, "error": "实时行情获取失败，请检查网络"}
-    snap = MarketSnapshot.capture(
-        realtime,
-        {c: v for c, v in minute.items() if v},
-        {c: v for c, v in kline.items() if v},
-    )
-    path = snapshot_path(snap.date)
-    if not allow_overwrite and os.path.exists(path):
-        return {"ok": False, "skipped": "exists", "date": snap.date}
-    save_snapshot(snap)
-    return {"ok": True, "date": snap.date, "path": path}
+    service = initialize()
+    if not allow_overwrite:
+        now = datetime.now(timezone(timedelta(hours=8)))
+        context = service.store.replay(now.date().isoformat())
+        if context and not context.missing and context.saved_at:
+            saved = datetime.fromisoformat(context.saved_at).astimezone(now.tzinfo)
+            if saved.date() == now.date() and (saved.hour, saved.minute) >= (AUTO_SNAPSHOT["hour"], AUTO_SNAPSHOT["minute"]):
+                return {"ok": False, "skipped": "exists", "date": context.date}
+    return service.collect(force=True)
 
 
-# ---------- 收盘自动保存（只按时间判断，到点主动触发） ----------
+def collect_history():
+    return initialize().collect()
+
 
 def should_auto_save(now):
-    """时间判定（纯函数）：周一至周五且已过收盘缓冲时刻"""
-    if now.weekday() >= 5:
-        return False
-    return (now.hour, now.minute) >= (AUTO_SNAPSHOT["hour"], AUTO_SNAPSHOT["minute"])
+    return now.weekday() < 5 and (now.hour, now.minute) >= (AUTO_SNAPSHOT["hour"], AUTO_SNAPSHOT["minute"])
 
 
-def _fire_time(now):
-    """下一个触发时刻（纯函数）：交易日已过收盘时刻 → 立即；否则下一个工作日的收盘时刻"""
-    today_at = now.replace(hour=AUTO_SNAPSHOT["hour"], minute=AUTO_SNAPSHOT["minute"],
-                           second=0, microsecond=0)
-    if now.weekday() < 5 and now >= today_at:
+def _fire_time(now, initial=True):
+    today_at = now.replace(hour=AUTO_SNAPSHOT["hour"], minute=AUTO_SNAPSHOT["minute"], second=0, microsecond=0)
+    if initial and now.weekday() < 5 and now >= today_at:
         return now
-    d = today_at
-    if now >= d:
-        d += timedelta(days=1)
-    while d.weekday() >= 5:
-        d += timedelta(days=1)
-    return d
+    day = today_at
+    if now >= day:
+        day += timedelta(days=1)
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    return day
 
 
-def arm_auto_save(scheduler):
-    """布防收盘自动保存：到点主动触发一次，完成后再自动布防下一个交易日"""
-    scheduler.add_once("app.auto_snapshot", _fire_time(datetime.now()),
-                       lambda: _auto_save_fired(scheduler))
+def arm_auto_save(scheduler, initial=True):
+    now = datetime.now(timezone(timedelta(hours=8)))
+    scheduler.add_once("app.auto_snapshot", _fire_time(now, initial), lambda: _auto_save_fired(scheduler))
 
 
 def _auto_save_fired(scheduler):
     try:
-        if should_auto_save(datetime.now()):
-            r = capture_today(allow_overwrite=False)
-            if r.get("ok"):
-                print(f"[快照] 收盘自动保存 {r['date']} -> {r['path']}", flush=True)
-    except Exception as e:
-        print(f"[快照] 自动保存失败: {e}", flush=True)
+        if not is_offline():
+            capture_today(allow_overwrite=False)
     finally:
-        arm_auto_save(scheduler)
+        arm_auto_save(scheduler, initial=False)
 
-
-# ---------- 取数入口（组件统一从这里拿数据） ----------
 
 def get_realtime(code):
-    if is_offline():
-        with _lock:
-            q = _snapshot.realtime.get(code)
-            return q.to_dict() if q else None
-    return stock_api.get_realtime(code)
+    return get_realtime_batch([code]).get(code)
 
 
 def get_realtime_batch(codes):
-    if is_offline():
-        with _lock:
-            return {c: q.to_dict() for c, q in _snapshot.realtime.items() if c in codes}
-    return stock_api.get_realtime_batch(codes)
+    return initialize().quotes(list(codes))
 
 
 def get_minute_data(code):
-    if is_offline():
-        with _lock:
-            pts = _snapshot.minute.get(code) or []
-            return [replace(p, date=p.date or _snapshot.date).to_dict() for p in pts]
-    return stock_api.get_minute_data(code)
+    return initialize().series("minute", code) or None
 
 
-def get_kline(code, count=KLINE_DAYS):
-    if is_offline():
-        with _lock:
-            bars = _snapshot.kline.get(code) or []
-            return [b.to_dict() for b in bars]
-    return stock_api.get_kline(code, count)
+def get_kline(code, count=None):
+    count = count if count is not None else get_config("KLINE_DAYS", KLINE_DAYS)
+    return initialize().series("kline", code, count) or None
 
 
 def get_close_series(code, count=250):
-    """收盘价序列（PE折算用）。在线走真实收盘价；离线降级用快照日K收盘
-    （快照仅含 A 股组内股票且窗口较短，美股参照在快照模式下不可用）"""
-    if is_offline():
-        with _lock:
-            bars = (_snapshot.kline.get(code) or [])[-count:]
-            return [{"date": b.date, "close": b.close} for b in bars] or None
-    return stock_api.get_close_series(code, count)
+    return initialize().series("close", code, count) or None

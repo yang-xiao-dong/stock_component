@@ -28,6 +28,7 @@ from .snapshot import (
     snapshot_path,
 )
 from .stock import StockInfo
+from .history import ClosePoint, MarketBatch, ReplayContext, HistoryStatus, DataModePreference
 
 __all__ = [
     "Contract",
@@ -39,4 +40,5 @@ __all__ = [
     "ComponentLayout",
     "MarketSnapshot", "SNAPSHOT_VERSION",
     "save_snapshot", "load_snapshot", "snapshot_path",
+    "ClosePoint", "MarketBatch", "ReplayContext", "HistoryStatus", "DataModePreference",
 ]

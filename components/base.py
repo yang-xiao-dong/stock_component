@@ -81,6 +81,9 @@ class AppApi(WindowControls):
     def list_snapshots(self):
         return data_source.list_snapshots()
 
+    def get_history_status(self):
+        return data_source.get_history_status()
+
     def capture_snapshot(self):
         """抓取当前整组数据并存为当日快照"""
         return data_source.capture_today()
@@ -117,6 +120,7 @@ def assemble(components):
     → 建窗 → 挂载组件 API → 起调度器 → 进入主循环"""
     components = list(components)
     scheduler = Scheduler()
+    data_source.initialize()
     api = AppApi(components)
 
     # 按发现的组件生成外壳槽位（新增组件零改动出现在窗口里）
@@ -157,6 +161,7 @@ def assemble(components):
 
     # 收盘自动快照：到收盘时刻主动触发一次（已存在当日快照则跳过），完成后再布防下一天
     data_source.arm_auto_save(scheduler)
+    scheduler.add("history.collect", 60, data_source.collect_history, immediate=True)
 
     scheduler.start()
     webview.start()

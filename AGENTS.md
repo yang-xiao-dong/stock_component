@@ -14,6 +14,8 @@ python -m components.stock.component  # 组件1单独调试
 python -m components.group.component  # 组件2单独调试
 python tests/test_group_calc.py       # 单元测试（离线、无网络）
 python tests/test_data_define.py      # 数据契约测试（往返/容错/快照存取）
+python tests/test_history_store.py    # 历史库事务、版本、旧快照导入、备份迁移
+python tests/test_history_service.py  # 在线/离线一致性、断网重启、配置与缓存隔离
 python tests/gui_drag_test.py         # GUI 自动化（会移动真实鼠标；默认不运行，仅用户明确要求时用）
 pip install pywebview requests        # 依赖
 ```
@@ -30,8 +32,9 @@ app.py（薄入口：发现+装配）→ components/（组件，自动发现）�
 - 生产端（stock_api / group_calc）必须经契约构造输出（`to_dict()`）；前端字段名以契约为准
 - 改字段流程：先改 data_define → 同步生产端与前端 → 补测试（tests/test_data_define.py）
 - `from_dict` 容错（缺失字段为 None、未知字段忽略），保证旧版本快照仍可加载
-- **MarketSnapshot 是收盘快照契约**：只存原始数据（行情+分时+日K），组合结构由快照经 group_calc 离线重算、不冗余存储；落盘 `data/snapshots/<date>.json`（已 gitignore），供后期离线加载某交易日收盘后的完整数据
-- **数据源统一入口 core/data_source.py**：组件一律经它取数（不直接 import stock_api），在线/离线对组件透明；模式由窗口级 API（get/set_data_mode、list_snapshots、capture_snapshot）在外壳顶栏切换，切换后外壳重载组件 iframe 整体生效；收盘自动快照到点**主动触发一次**并自动布防下一交易日（arm_auto_save，时刻见 config.AUTO_SNAPSHOT，已存在当日快照则跳过）
+- **历史库唯一维护处 core/history/**：SQLite 永久保存采集数据和不可变版本；表结构、字段含义、索引、口径、版本迁移和维护命令见 [docs/数据库设计.md](docs/数据库设计.md)。修改前必须阅读；禁止覆写历史事实或拼接不同前复权版本。MarketSnapshot 保留为旧 JSON 兼容契约，启动时导入旧快照并保留原文件。
+- **数据源统一入口 core/data_source.py**：组件一律经它取数（不直接 import stock_api 或数据库）；在线先入库再读回，离线固定数据版本、不联网。新增数据字段在 data_define/history.py 或所属域定义；新增采集需求在 history/settings.py 汇总。模式切换通过 context_key 失效后端缓存，历史计算参数经 get_config 读取。
+- 后台 history.collect 汇总全部组件数据需求，收盘自动保存到点主动触发并布防下一工作日。缺失数据明确提示，不能用今天的数据或其他复权口径补成完整历史。
 
 ## 新增组件流程
 1. `components/<id>/component.py`：Component 子类（声明 id / title / embed_height），`create_api(scheduler)` 返回 API 对象；后台刷新任务用 `scheduler.add()` 注册，**不要自开线程**
@@ -64,3 +67,6 @@ app.py（薄入口：发现+装配）→ components/（组件，自动发现）�
 - 新功能提交使用 `feat: 中文说明` 或 `feat(组件): 中文说明`；修复使用 `fix: 中文说明`，文档使用 `docs: 中文说明`。GitHub 流水线累计 5 个尚未发布的 feat 提交后自动打包发布，规则见 README.md。
 - 界面/交互类改动先经用户验证，再提交
 - `__pycache__` 已由 .gitignore 排除，不要提交
+
+
+## 结束后打包，交给用户验证

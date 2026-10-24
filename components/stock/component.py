@@ -3,7 +3,6 @@
 
 单独调试（项目根目录下运行）：python -m components.stock.component
 """
-import time
 
 from components.base import Component, assemble
 from config import REFRESH, STOCKS
@@ -11,105 +10,61 @@ from core import data_source
 
 
 class StockApi:
-    """个股视图的前端接口（窗口控制由装配层统一提供）"""
-
+    """组件只保存选择状态；行情缓存统一由数据源管理，避免切换后串日期。"""
     def __init__(self, scheduler=None):
         self.current_stock_index = 0
-        self.stock_data = {}
-        self.update_all_stock_data()
+        self._source_key = None
         if scheduler:
-            scheduler.add("stock.realtime", REFRESH["realtime"], self.update_all_stock_data)
-
-    def update_all_stock_data(self):
-        """更新所有股票数据（经数据源，在线/离线对组件透明）"""
-        for stock in STOCKS:
-            try:
-                self.stock_data[stock["code"]] = data_source.get_realtime(stock["code"])
-            except Exception:
-                self.stock_data[stock["code"]] = None
+            scheduler.add("stock.realtime", REFRESH["realtime"], self.update_all_stock_data, immediate=True)
 
     def get_stocks(self):
-        """获取股票列表"""
-        return STOCKS
+        key = data_source.context_key()
+        if key != self._source_key:
+            self.current_stock_index = 0
+            self._source_key = key
+        return data_source.get_config("STOCKS", STOCKS)
+
+    def update_all_stock_data(self):
+        return data_source.get_realtime_batch([s["code"] for s in self.get_stocks()])
 
     def get_current_stock(self):
-        """获取当前股票"""
-        return STOCKS[self.current_stock_index]
+        stocks = self.get_stocks()
+        return stocks[self.current_stock_index % len(stocks)] if stocks else None
 
     def get_current_stock_index(self):
-        """获取当前股票索引"""
+        self.get_stocks()
         return self.current_stock_index
 
     def set_current_stock_index(self, index):
-        """设置当前股票索引"""
-        if 0 <= index < len(STOCKS):
+        if 0 <= index < len(self.get_stocks()):
             self.current_stock_index = index
             return True
         return False
 
     def next_stock(self):
-        """切换到下一个股票"""
-        self.current_stock_index = (self.current_stock_index + 1) % len(STOCKS)
+        stocks = self.get_stocks()
+        self.current_stock_index = (self.current_stock_index + 1) % max(1, len(stocks))
         return self.current_stock_index
 
     def prev_stock(self):
-        """切换到上一个股票"""
-        self.current_stock_index = (self.current_stock_index - 1) % len(STOCKS)
+        stocks = self.get_stocks()
+        self.current_stock_index = (self.current_stock_index - 1) % max(1, len(stocks))
         return self.current_stock_index
 
     def get_realtime(self, code=None):
-        """获取实时数据，如果code为None则返回当前股票"""
-        if code is None:
-            code = STOCKS[self.current_stock_index]["code"]
-
-        # 如果数据过期（超过10秒）或不存在，重新获取
-        if (code not in self.stock_data or
-            self.stock_data[code] is None or
-            time.time() - self.stock_data[code].get("timestamp", 0) > 10):
-            try:
-                new_data = data_source.get_realtime(code)
-                if new_data:
-                    new_data["timestamp"] = time.time()
-                    self.stock_data[code] = new_data
-                else:
-                    # 如果获取失败，保留旧数据（如果有）
-                    pass
-            except Exception as e:
-                # 如果获取失败，保留旧数据（如果有）
-                print(f"获取实时数据失败: {e}")
-
-        return self.stock_data.get(code)
+        code = code or (self.get_current_stock() or {}).get("code")
+        return data_source.get_realtime(code) if code else None
 
     def get_minute_data(self, code=None):
-        """获取分时数据"""
-        if code is None:
-            code = STOCKS[self.current_stock_index]["code"]
-        try:
-            return data_source.get_minute_data(code)
-        except Exception as e:
-            print(f"获取分时数据失败: {e}")
-            return None
+        code = code or (self.get_current_stock() or {}).get("code")
+        return data_source.get_minute_data(code) if code else None
 
     def get_kline(self, code=None):
-        """获取K线数据"""
-        if code is None:
-            code = STOCKS[self.current_stock_index]["code"]
-        try:
-            return data_source.get_kline(code)
-        except Exception as e:
-            print(f"获取K线数据失败: {e}")
-            return None
+        code = code or (self.get_current_stock() or {}).get("code")
+        return data_source.get_kline(code) if code else None
 
     def set_stock_index(self, index):
-        """设置当前股票索引"""
-        if 0 <= index < len(STOCKS):
-            self.current_stock_index = index
-            # 清除当前股票的缓存，强制重新获取数据
-            code = STOCKS[self.current_stock_index]["code"]
-            if code in self.stock_data:
-                del self.stock_data[code]
-            return True
-        return False
+        return self.set_current_stock_index(index)
 
 
 class StockComponent(Component):

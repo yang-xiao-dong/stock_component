@@ -23,6 +23,7 @@ class GroupApi:
         self._minute = None       # build_group_minute 结果（¥）
         self._kline = None        # build_group_kline 结果（¥）
         self._shares = None       # 建仓份额 {code: shares}（日K窗口首日开盘价均分买入）
+        self._source_key = None
         self._entry = None        # 建仓价 {code: price}
 
         self.refresh_realtime()
@@ -40,61 +41,75 @@ class GroupApi:
     # 不同轮次（甚至不同复权源：fqkline前复权 / 备用端点不复权）的数据按股票
     # 混进同一次计算，否则建仓价与份额会随混入比例漂移，数值前后对不上。
 
+    def _context(self):
+        key = data_source.context_key()
+        with self._lock:
+            if key != self._source_key:
+                self._source_key = key
+                self._realtime = {}
+                self._minute = self._kline = self._shares = self._entry = None
+        return (key, data_source.get_config("STOCKS", STOCKS),
+                data_source.get_config("PRINCIPAL", PRINCIPAL),
+                data_source.get_config("KLINE_DAYS", KLINE_DAYS))
+
     def refresh_realtime(self):
-        data = data_source.get_realtime_batch([s["code"] for s in STOCKS])
-        if data:
-            with self._lock:
+        key, stocks, _, _ = self._context()
+        codes = [s["code"] for s in stocks]
+        data = data_source.get_realtime_batch(codes)
+        with self._lock:
+            if codes and all(data.get(code) for code in codes) and data_source.context_key() == key:
                 self._realtime = data
 
     def refresh_minute(self):
-        codes = [s["code"] for s in STOCKS]
-        mode_key = dict(data_source.get_mode())
+        key, stocks, principal, _ = self._context()
+        codes = [s["code"] for s in stocks]
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
             fetched = dict(zip(codes, ex.map(data_source.get_minute_data, codes)))
-        # 整轮原子替换：缺一只合计线就会被低估，宁可沿用上一版完整分时
-        if any(not fetched.get(c) for c in codes) or data_source.get_mode() != mode_key:
+        if any(not fetched.get(c) for c in codes) or data_source.context_key() != key:
             return
-        minute_map = {c: fetched[c] for c in codes}
         with self._lock:
-            prev = {c: (self._realtime.get(c) or {}).get("prev_close") for c in minute_map}
+            prev = {c: (self._realtime.get(c) or {}).get("prev_close") for c in codes}
             shares = dict(self._shares) if self._shares else None
-        prev = {c: p for c, p in prev.items() if p}
-        if not prev:
+        if not shares or not all(prev.values()):
             return
-        minute = group_calc.build_group_minute(minute_map, prev, shares, PRINCIPAL)
+        minute = group_calc.build_group_minute(fetched, prev, shares, principal)
         with self._lock:
-            self._minute = minute
+            if data_source.context_key() == key:
+                self._minute = minute
 
     def refresh_kline(self):
-        codes = [s["code"] for s in STOCKS]
-        mode_key = dict(data_source.get_mode())
+        key, stocks, principal, days = self._context()
+        codes = [s["code"] for s in stocks]
         with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as ex:
-            fetched = dict(zip(codes, ex.map(lambda c: data_source.get_kline(c, KLINE_DAYS), codes)))
-        # 整轮原子替换：缺一只就整轮作废（部分数据会把本金错分给少数股票，
-        # 新旧/异源数据混用会让份额漂移），沿用上一版完整结果
-        if any(not fetched.get(c) for c in codes) or data_source.get_mode() != mode_key:
+            fetched = dict(zip(codes, ex.map(lambda c: data_source.get_kline(c, days), codes)))
+        if not codes or any(not fetched.get(c) for c in codes) or data_source.context_key() != key:
             return
-        kmap = {c: fetched[c] for c in codes}
-        data = group_calc.build_group_kline(kmap, PRINCIPAL, max_points=KLINE_DAYS)
+        data = group_calc.build_group_kline(fetched, principal, max_points=days)
         with self._lock:
-            self._kline = data
-            self._shares = data["shares"]
-            self._entry = {c: kmap[c][0]["open"] for c in codes}
+            if data_source.context_key() == key:
+                self._kline = data
+                self._shares = data["shares"]
+                self._entry = {c: fetched[c][0]["open"] for c in codes}
+                self._minute = None
 
     # ---------- JS 接口 ----------
 
     def get_group(self):
         """组合元信息"""
-        return {"name": GROUP_NAME, "mode": "equal", "count": len(STOCKS),
-                "principal": PRINCIPAL, "stocks": STOCKS}
+        _, stocks, principal, _ = self._context()
+        return {"name": data_source.get_config("GROUP_NAME", GROUP_NAME), "mode": "equal", "count": len(stocks),
+                "principal": principal, "stocks": stocks}
 
     def get_group_realtime(self):
         """组合实时概览：当日/累计盈亏(¥)、总市值、个股盈亏分解"""
+        key, _, principal, _ = self._context()
+        if not self._realtime:
+            self.refresh_realtime()
         with self._lock:
             rt = dict(self._realtime)
             shares = dict(self._shares) if self._shares else None
             entry = dict(self._entry) if self._entry else None
-        rows, total = group_calc.build_contribution(rt, shares, entry, PRINCIPAL)
+        rows, total = group_calc.build_contribution(rt, shares, entry, principal)
         if total is None:
             return None
         latest = ""
@@ -104,27 +119,33 @@ class GroupApi:
         out = dict(total)
         out["time"] = latest
         out["stocks"] = rows
-        return out
+        return out if data_source.context_key() == key else None
 
     def get_group_minute(self):
         """组内分时（各股当日盈亏¥ + 组合合计¥）"""
+        key, _, _, _ = self._context()
+        if not self._shares:
+            self.refresh_kline()
+        if not self._realtime:
+            self.refresh_realtime()
         with self._lock:
             data = self._minute
         if not data:
             self.refresh_minute()
             with self._lock:
                 data = self._minute
-        return data
+        return data if data_source.context_key() == key else None
 
     def get_group_kline(self):
         """组内日K（组合市值¥蜡烛 + 个股持市值¥线）"""
+        key, _, _, _ = self._context()
         with self._lock:
             data = self._kline
         if not data:
             self.refresh_kline()
             with self._lock:
                 data = self._kline
-        return data
+        return data if data_source.context_key() == key else None
 
 
 class GroupComponent(Component):

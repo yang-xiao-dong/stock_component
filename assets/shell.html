@@ -61,6 +61,7 @@
   .layout-panel button:disabled { opacity: .35; cursor: default; }
   .layout-panel button:focus-visible, #layoutToggle:focus-visible { outline: 1px solid #aeb6c4; outline-offset: 1px; }
   .layout-status { color: #8892a6; font-size: 10px; margin-top: 5px; }
+  .history-status { flex-basis: 100%; color: #aeb6c4; font-size: 10px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -69,9 +70,9 @@
     <span class="tb-tools">
       <button type="button" class="tb-btn" id="layoutToggle" aria-expanded="false" aria-controls="layoutPanel">排序</button>
       <span class="tb-badge" id="modeBadge" style="display:none">离线</span>
-      <select class="tb-select" id="snapDate" style="display:none" title="选择快照日期"></select>
-      <span class="tb-btn" id="modeToggle" title="切换 在线/离线快照">离线</span>
-      <span class="tb-btn" id="saveSnap" title="抓取当前整组数据保存为快照">存快照</span>
+      <select class="tb-select" id="snapDate" style="display:none" title="选择已有本地数据的日期"></select>
+      <button type="button" class="tb-btn" id="modeToggle" title="切换在线采集与历史离线回放">离线</button>
+      <button type="button" class="tb-btn" id="saveSnap" title="立即刷新并保存全部组件所需数据">保存当前</button>
     </span>
     <span class="window-tools">
       <button type="button" class="tb-btn window-btn" id="minimizeWindow"
@@ -84,6 +85,7 @@
       <ol class="layout-list" id="layoutList"></ol>
       <p class="layout-status" id="layoutStatus" role="status">使用上下箭头调整，自动保存。</p>
     </section>
+    <div class="history-status" id="historyStatus" role="status">在线数据自动保存</div>
   </div>
   <div class="stack"><!-- COMPONENT SLOTS --></div>
 
@@ -235,7 +237,9 @@
         const snaps = await py.list_snapshots();
         const mode = await py.get_data_mode();
         const sel = document.getElementById('snapDate');
-        sel.innerHTML = snaps.map(d => `<option value="${d}">${d}</option>`).join('');
+        const selected = mode.date || sel.value || snaps[snaps.length - 1];
+        sel.replaceChildren(...snaps.map(d => new Option(d, d)));
+        sel.value = selected;
         const offline = mode.mode === 'offline';
         sel.style.display = offline ? '' : 'none';
         if (offline && mode.date) sel.value = mode.date;
@@ -244,22 +248,39 @@
         badge.style.display = offline ? '' : 'none';
         badge.textContent = `离线 ${mode.date || ''}`;
         document.getElementById('saveSnap').style.display = offline ? 'none' : '';
+        const status = await py.get_history_status();
+        const missing = status.missing || [];
+        const saved = status.saved_at ? ` · 保存于 ${new Date(status.saved_at).toLocaleString()}` : '';
+        const detail = missing.length ? ` · 数据不足 ${missing.length} 项（展开查看）` : '';
+        const statusEl = document.getElementById('historyStatus');
+        statusEl.replaceChildren(document.createTextNode(`${status.message || ''}${saved}`));
+        if (missing.length) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary'); summary.textContent = detail;
+          const labels = {quote: '行情', minute: '分时', kline: '日K', close: 'PE收盘价'};
+          const text = document.createElement('div');
+          text.textContent = missing.map(item => item.replace(/\b(quote|minute|kline|close):/g,
+            (_, kind) => `${labels[kind]} `)).join('；');
+          details.append(summary, text); statusEl.append(details);
+        }
       } catch (e) { console.error(e); }
     }
 
     document.getElementById('modeToggle').addEventListener('click', async () => {
       const py = api(); if (!py) return;
+      document.getElementById('modeToggle').disabled = true;
       try {
         const mode = await py.get_data_mode();
         if (mode.mode === 'offline') {
           if (await py.set_data_mode('live')) { reloadSlots(); initDataMode(); }
         } else {
           const snaps = await py.list_snapshots();
-          if (!snaps.length) { flashBtn('modeToggle', '无快照'); return; }
+          if (!snaps.length) { flashBtn('modeToggle', '暂无历史数据'); return; }
           const date = document.getElementById('snapDate').value || snaps[snaps.length - 1];
           if (await py.set_data_mode('offline', date)) { reloadSlots(); initDataMode(); }
         }
       } catch (e) { console.error(e); }
+      finally { document.getElementById('modeToggle').disabled = false; }
     });
 
     document.getElementById('snapDate').addEventListener('change', async () => {
@@ -274,16 +295,20 @@
     document.getElementById('saveSnap').addEventListener('click', async () => {
       const py = api(); if (!py) return;
       const btn = document.getElementById('saveSnap');
+      btn.disabled = true;
       btn.textContent = '保存中…';
       try {
         const r = await py.capture_snapshot();
-        btn.textContent = r.ok ? `已存 ${r.date}` : '保存失败';
-        if (r.ok) await initDataMode();
+        btn.textContent = r.ok ? `${r.complete ? '已存' : '部分已存'} ${r.date}` : '保存失败';
+        if (r.ok) { reloadSlots(); await initDataMode(); }
+        if (!r.ok) document.getElementById('historyStatus').textContent = r.error || '保存失败，请重试';
       } catch (e) { console.error(e); btn.textContent = '保存失败'; }
-      setTimeout(() => { btn.textContent = '存快照'; }, 2500);
+      finally { btn.disabled = false; }
+      setTimeout(() => { btn.textContent = '保存当前'; }, 2500);
     });
 
     whenBridgeReady(initDataMode);
+    whenBridgeReady(() => setInterval(initDataMode, 15000));
   </script>
 </body>
 </html>
