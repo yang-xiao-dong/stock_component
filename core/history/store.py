@@ -158,26 +158,38 @@ class HistoryStore:
 
     def latest(self, code, kind, date=None):
         with self.connection() as conn:
-            # quote/minute 必须属于选定交易日；历史日K只选一整个版本，不拼接复权序列。
-            date_clause = ""
-            params = [code, kind]
+            # quote/minute 必须属于选定交易日；历史日K/收盘优先取“窗口跨越该日”的
+            # 最宽版本（读取时按该日裁剪，绝不读未来行），否则取 end 离该日最近的
+            # 版本。不按入库时间挑：深度回补会让最小/最旧的窗口成为“最新入库”。
             if date:
-                date_clause = " AND d.end_date=?" if kind in ("quote", "minute") else " AND d.end_date<=?"
-                params.append(date)
-            row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
-                WHERE i.code=? AND i.kind=?""" + date_clause +
-                               " ORDER BY i.received_at DESC,i.id DESC LIMIT 1", params).fetchone()
-            if not row and date and kind in ("kline", "close"):
-                # 补采可提供过去价格；回放标记 reconstructed，不伪称当时已知。
+                if kind in ("quote", "minute"):
+                    row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
+                        WHERE i.code=? AND i.kind=? AND d.end_date=?
+                        ORDER BY i.received_at DESC,i.id DESC LIMIT 1""", (code, kind, date)).fetchone()
+                else:
+                    row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
+                        WHERE i.code=? AND i.kind=? AND d.start_date<=? AND d.end_date>=?
+                        ORDER BY d.end_date DESC, d.row_count DESC, i.received_at DESC, i.id DESC
+                        LIMIT 1""", (code, kind, date, date)).fetchone()
+                    if not row:
+                        row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
+                            WHERE i.code=? AND i.kind=? AND d.end_date<=?
+                            ORDER BY d.end_date DESC, d.row_count DESC, i.received_at DESC, i.id DESC
+                            LIMIT 1""", (code, kind, date)).fetchone()
+            else:
                 row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
-                    WHERE i.code=? AND i.kind=? AND d.start_date<=?
-                    ORDER BY i.received_at DESC,i.id DESC LIMIT 1""", (code, kind, date)).fetchone()
+                    WHERE i.code=? AND i.kind=?
+                    ORDER BY i.received_at DESC,i.id DESC LIMIT 1""", (code, kind)).fetchone()
             return row[0] if row else None
 
     def dates(self):
+        # 离线可选日期只列 A 股有数据的交易日；美股参照数据不单独构成可回放日
+        # （A 股休市、仅美股开市的日子选了必然全缺失）。
         with self.connection() as conn:
             return [row[0] for row in conn.execute("""SELECT trade_date FROM replay UNION
-                SELECT DISTINCT trade_date FROM market_point ORDER BY trade_date""")]
+                SELECT DISTINCT trade_date FROM market_point
+                WHERE code LIKE 'sh%' OR code LIKE 'sz%'
+                ORDER BY trade_date""")]
 
     def save_replay(self, context: ReplayContext):
         valid_date(context.date)

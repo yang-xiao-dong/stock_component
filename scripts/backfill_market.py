@@ -66,13 +66,13 @@ def main():
                     break
                 rows = batch.rows
                 earliest = rows[0]["date"]
+                if end is not None and earliest >= end:
+                    break  # 该轮未把覆盖范围向前扩展（上市初的确认轮），不落库
                 store.save_batch(batch, config)
                 rounds += 1
                 print(f"{code} {kind}: 第{rounds}轮 {len(rows)} 根 止于 {earliest} 复权={batch.adjustment}")
                 if earliest <= args.until:
                     break
-                if end is not None and earliest >= end:
-                    break  # 已到上市初，无法再向前
                 end = earliest
             print(f"{code} {kind}: 完成，库内覆盖 {earliest_in_store(store, code, kind)} 起")
     print(f"库内可回放交易日数: {before} -> {len(store.dates())}")

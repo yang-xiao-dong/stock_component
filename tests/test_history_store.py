@@ -75,6 +75,34 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(all(len(value) == 5 for value in values))
         self.assertEqual(self.counts()["dataset"], 12)
 
+    def test_reconstruction_prefers_spanning_widest_window_over_latest_ingested(self):
+        # 深度回补会让“最小/最旧”的窗口成为最新入库；带日期的历史版本选择必须
+        # 优先取窗口跨越该日且行数最多的版本，读取时按该日裁剪出满窗。
+        code = "sh600001"
+        wide = self.store.save_batch(self.provider.get_kline_batch(code, 60), self.config)
+        deep = self.store.save_batch(Provider(day="2020-01-10").get_kline_batch(code, 3),
+                                     self.config)  # 更晚入库，但窗口古老且只有3根
+        picked = self.store.latest(code, "kline", date="2026-08-15")
+        self.assertEqual(picked, wide)
+        rows = self.store.read(picked, count=60, end_date="2026-08-15")
+        self.assertEqual(rows[-1]["date"], "2026-08-15")  # 恰好裁到所选日，不读未来行
+        self.assertEqual(len(rows), 22)  # 夹具按日历日生成：窗口 07-25~09-22 截到 08-15 共 22 根
+        # 无窗口跨越该日时回退到 end 离该日最近的版本
+        self.assertEqual(self.store.latest(code, "kline", date="2021-06-01"), deep)
+
+    def test_spanning_tie_prefers_more_rows(self):
+        code = "sh600001"
+        wide = self.store.save_batch(self.provider.get_kline_batch(code, 60), self.config)
+        narrow = self.store.save_batch(self.provider.get_kline_batch(code, 10), self.config)  # 同终点更晚入库
+        self.assertEqual(self.store.latest(code, "kline", date="2026-09-10"), wide)
+
+    def test_dates_exclude_foreign_only_days(self):
+        # 离线可选日期只列 A 股有数据的交易日；仅港美股有数据的日子不出现在清单
+        self.store.save_batch(self.provider.get_kline_batch("sh600001", 3), self.config)
+        self.store.save_batch(Provider(day="2026-09-25").get_kline_batch("hk000001", 2), self.config)
+        dates = self.store.dates()
+        self.assertEqual(dates, ["2026-09-20", "2026-09-21", "2026-09-22"])
+
     def test_backup_export_restore_preserve_replay_and_refuse_overwrite(self):
         identity = self.store.save_batch(self.provider.get_kline_batch("sh600001", 5), self.config)
         replay = ReplayContext(date="2026-09-22", config=self.config, datasets={"kline:sh600001": identity})
