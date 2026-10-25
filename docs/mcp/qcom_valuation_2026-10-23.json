@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "fetched_at": "2026-10-25",
+    "source_tool": "Wind MCP wind-global-stock get_global_stock_fundamentals",
+    "notes": [
+      "分位数口径为『最新财年内』（约205个交易日样本），不是长历史分位，仅作参考",
+      "市值单位亿美元；PE 为最新财年口径"
+    ]
+  },
+  "code": "QCOM.O",
+  "name": "高通(QUALCOMM)",
+  "date": "2026-10-23",
+  "market_cap_usd_bn": 1878.4365,
+  "pe": 20.2855,
+  "pe_percentile_fy": 31.8627,
+  "pb": 6.7917,
+  "pb_percentile_fy": 50.7317
+}
