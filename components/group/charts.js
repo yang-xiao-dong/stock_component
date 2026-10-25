@@ -24,14 +24,18 @@ function drawMinute(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!data || !data.times || data.times.length < 2 || !data.stocks) {
-    drawChartMessage('暂无足够分时数据，稍后自动重试'); return;
+    drawChartMessage(HISTORY_REPLAY ? '暂无足够分时数据（离线日期未采集）'
+                                    : '暂无足够分时数据，稍后自动重试'); return;
   }
 
   const PR = 48, PT = 10, PB = 14;
   const all = [];
   data.stocks.forEach(s => s.data.forEach(v => { if (v != null) all.push(v); }));
   (data.total || []).forEach(v => { if (v != null) all.push(v); });
-  if (!all.length) { drawChartMessage('暂无足够分时数据，稍后自动重试'); return; }
+  if (!all.length) {
+    drawChartMessage(HISTORY_REPLAY ? '暂无足够分时数据（离线日期未采集）'
+                                    : '暂无足够分时数据，稍后自动重试'); return;
+  }
   let max = Math.max(...all, 0), min = Math.min(...all, 0);
   const pad = (max - min) * 0.12 || 10; max += pad; min -= pad;
   const umax = max - pad, umin = min + pad;
@@ -93,7 +97,8 @@ function drawK(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!data || !data.candles || data.candles.length < 2) {
-    drawChartMessage('暂无足够日 K 数据，稍后自动重试'); return;
+    drawChartMessage(HISTORY_REPLAY ? '暂无足够日K数据（窗口不足：早于上市或长期停牌）'
+                                    : '暂无足够日 K 数据，稍后自动重试'); return;
   }
 
   const PR = 48, PT = 10, PB = 14;

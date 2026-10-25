@@ -100,6 +100,9 @@ class GroupApi:
         return {"name": data_source.get_config("GROUP_NAME", GROUP_NAME), "mode": "equal", "count": len(stocks),
                 "principal": principal, "stocks": stocks}
 
+    def get_group_data_mode(self):
+        return data_source.get_mode()
+
     def get_group_realtime(self):
         """组合实时概览：当日/累计盈亏(¥)、总市值、个股盈亏分解"""
         key, _, principal, _ = self._context()

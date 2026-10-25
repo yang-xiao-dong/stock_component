@@ -161,7 +161,8 @@ async function refresh() {
         minuteAt = Date.now();
       }
       if (minuteCache) drawMinute(minuteCache);
-      else drawChartMessage('分时数据暂不可用，稍后自动重试');
+      else drawChartMessage(HISTORY_REPLAY ? '该离线日期无当日分时（未采集，不可回补）'
+                                           : '分时数据暂不可用，稍后自动重试');
     } else {
       if (!klineCache?.candles?.length) drawChartMessage('日 K 数据加载中…');
       if (!klineCache?.candles?.length || Date.now() - klineAt > 600000) {
@@ -169,7 +170,8 @@ async function refresh() {
         klineAt = Date.now();
       }
       if (klineCache) drawK(klineCache);
-      else drawChartMessage('日 K 数据暂不可用，稍后自动重试');
+      else drawChartMessage(HISTORY_REPLAY ? '该日期日K窗口不足（早于上市或长期停牌）'
+                                           : '日 K 数据暂不可用，稍后自动重试');
     }
   } catch (e) {
     $('upd').textContent = '连接失败…';
@@ -337,7 +339,12 @@ function goLive() {
 }
 
 document.addEventListener('DOMContentLoaded', () => init());
-whenBridgeReady(() => goLive());
+let HISTORY_REPLAY = false;   // 离线历史回放：缺失数据不可重试，提示语区分
+whenBridgeReady(() => {
+  api().get_group_data_mode?.().then(m => { HISTORY_REPLAY = !!(m && m.mode === 'offline'); })
+    .catch(() => {})
+    .finally(() => goLive());
+});
 </script>
 </body>
 </html>
