@@ -38,3 +38,33 @@ class BuilderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildIdentityTests(unittest.TestCase):
+    def test_display_version_and_git_id(self):
+        from builder.build import display_version, git_build_id
+        self.assertEqual(display_version("1.2.6", "abc1234", False), "1.2.6+gabc1234")
+        self.assertEqual(display_version("1.2.6", "abc1234", True), "1.2.6+gabc1234+dirty")
+        short, full, dirty = git_build_id()
+        self.assertTrue(short)
+
+    def test_build_record_table_appends_rows_with_header(self):
+        from builder.build import append_build_record
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            table = Path(tmp) / "发布版本.md"
+            append_build_record("1.2.6", "1.2.6+gabc1234", "abcdef1234567890", False, "首例", table)
+            append_build_record("1.2.7", "1.2.7+gabd9999+dirty", "abd9999aaaa", True, "", table)
+            text = table.read_text(encoding="utf-8")
+        self.assertIn("| 展示版本 | git |", text)
+        self.assertIn("1.2.6+gabc1234", text)
+        self.assertIn("含未提交改动", text)
+        self.assertEqual(text.count("\n| 1.2"), 2)
+
+    def test_version_file_carries_build_identity(self):
+        from builder.build import pyinstaller_args
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            pyinstaller_args("2.3.4", tmp, "2.3.4+gabc1234")
+        info = (ROOT / "build" / "generated" / "version_info.txt").read_text(encoding="utf-8")
+        self.assertIn("'2.3.4+gabc1234'", info)

@@ -69,6 +69,7 @@
     <span class="tb-title">{{APP_TITLE}}</span>
     <span class="tb-tools">
       <button type="button" class="tb-btn" id="layoutToggle" aria-expanded="false" aria-controls="layoutPanel">排序</button>
+      <span class="tb-badge" id="buildBadge" style="display:none;cursor:default" title="版本与构建标识（对应唯一 git 提交）"></span>
       <span class="tb-badge" id="modeBadge" style="display:none">离线</span>
       <select class="tb-select" id="snapDate" style="display:none" title="选择已有本地数据的日期"></select>
       <button type="button" class="tb-btn" id="modeToggle" title="切换在线采集与历史离线回放">离线</button>
@@ -306,6 +307,13 @@
       finally { btn.disabled = false; }
       setTimeout(() => { btn.textContent = '保存当前'; }, 2500);
     });
+
+    // 版本与构建标识（打包时由 builder 写入 assets/build_info.json；源码运行无此文件则不显示）
+    fetch('assets/build_info.json').then(r => r.ok ? r.json() : null).then(b => {
+      if (!b) return;
+      const el = document.getElementById('buildBadge');
+      if (el && (b.display || b.version)) { el.textContent = b.display || b.version; el.style.display = ''; }
+    }).catch(() => {});
 
     whenBridgeReady(initDataMode);
     whenBridgeReady(() => setInterval(initDataMode, 15000));
