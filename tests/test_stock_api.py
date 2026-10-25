@@ -83,6 +83,18 @@ class ChartApiTests(unittest.TestCase):
                 self.assertEqual(batch.adjustment, expected)
                 self.assertEqual(batch.raw, payload["data"]["sh603893"][field])
 
+    def test_minute_history_days_are_split_per_day(self):
+        payload = {"code": 0, "data": {"sh603893": {"data": [
+            {"date": "20261023", "data": ["0930 10.0 1 100.0", "0931 11.0 2 220.0"]},
+            {"date": "20261022", "data": ["0930 9.0 1 90.0"]},
+        ]}}}
+        with patch.object(stock_api.session, "get", return_value=response(payload)) as get:
+            batches = stock_api.get_minute_history_batches("sh603893")
+        self.assertEqual(get.call_args.kwargs["params"], {"code": "sh603893"})
+        self.assertEqual([b.rows[0]["date"] for b in batches], ["2026-10-23", "2026-10-22"])
+        self.assertEqual(batches[0].rows[0], {"date": "2026-10-23", "time": "09:30", "price": 10.0, "vol": 1.0})
+        self.assertEqual(batches[1].kind, "minute")
+
     def test_quote_response_uses_symbols_instead_of_response_position(self):
         fields = ["0"] * 54
         fields[1], fields[2], fields[3], fields[4], fields[30] = "测试", "000002", "12", "10", "20260922150000"

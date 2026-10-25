@@ -183,6 +183,37 @@ def get_minute_batch(code=CODE):
         return None
 
 
+def get_minute_history_batches(code=CODE):
+    """最近约5个交易日的逐日历史分时（腾讯 day/query 端点，窗口硬上限5天，
+    date/p 参数均无效——实测仅返回最近5日，更早需走 Wind 救援）。
+
+    返回按日拆分的 MarketBatch 列表：每日单独成批，dataset 末端日期=该交易日，
+    供离线回放按日精确定位；行格式与当日分时一致（第3项为累计成交量）。
+    """
+    try:
+        data = _get_chart_data("/appstock/app/day/query", {"code": code})
+        days = (data.get(code) or {}).get("data") or []
+    except Exception:
+        return []
+    batches = []
+    for group in days:
+        try:
+            trade_date = datetime.strptime(str(group.get("date")), "%Y%m%d").date().isoformat()
+            points = []
+            for row in group.get("data", []):
+                parts = row.split()
+                if len(parts) < 3:
+                    continue
+                t = parts[0].replace(":", "")
+                points.append(MinutePoint(time=f"{t[:2]}:{t[2:4]}", price=float(parts[1]),
+                                          vol=float(parts[2]), date=trade_date).to_dict())
+            if points:
+                batches.append(MarketBatch(code=code, kind="minute", rows=points, raw=group))
+        except (ValueError, KeyError, TypeError):
+            continue
+    return batches
+
+
 def get_close_series(code, count=250, end=None):
     """收盘价序列 [{"date","close"}, ...]，供 PE 历史折算（真实收盘价，非复权K线）。
 
