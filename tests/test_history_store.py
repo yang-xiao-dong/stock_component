@@ -96,6 +96,16 @@ class StoreTests(unittest.TestCase):
         narrow = self.store.save_batch(self.provider.get_kline_batch(code, 10), self.config)  # 同终点更晚入库
         self.assertEqual(self.store.latest(code, "kline", date="2026-09-10"), wide)
 
+    def test_spanning_prefers_earliest_start_over_latest_end(self):
+        # 跨越该日的版本中，起点最早（该日前深度最大）者优先——
+        # 浅起点的窗口虽然 end 更新，也不能挤掉深起点版本
+        code = "sh600001"
+        deep = self.store.save_batch(Provider(day="2026-09-20").get_kline_batch(code, 40), self.config)
+        shallow = self.store.save_batch(Provider(day="2026-09-22").get_kline_batch(code, 15), self.config)
+        picked = self.store.latest(code, "kline", date="2026-09-15")
+        self.assertEqual(picked, deep)
+        self.assertGreater(self.store.info(shallow)["end_date"], self.store.info(deep)["end_date"])
+
     def test_dates_exclude_foreign_only_days(self):
         # 离线可选日期只列 A 股有数据的交易日；仅港美股有数据的日子不出现在清单
         self.store.save_batch(self.provider.get_kline_batch("sh600001", 3), self.config)

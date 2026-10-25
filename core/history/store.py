@@ -159,8 +159,9 @@ class HistoryStore:
     def latest(self, code, kind, date=None):
         with self.connection() as conn:
             # quote/minute 必须属于选定交易日；历史日K/收盘优先取“窗口跨越该日”的
-            # 最宽版本（读取时按该日裁剪，绝不读未来行），否则取 end 离该日最近的
-            # 版本。不按入库时间挑：深度回补会让最小/最旧的窗口成为“最新入库”。
+            # 版本中起点最早者（该日之前深度最大，读取时按该日裁剪、绝不读未来行），
+            # 否则取 end 离该日最近的版本。不按入库时间挑：深度回补会让最小/最旧的
+            # 窗口成为“最新入库”；也不按 end 挑：浅起点的长窗口会挤掉深起点版本。
             if date:
                 if kind in ("quote", "minute"):
                     row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
@@ -169,7 +170,7 @@ class HistoryStore:
                 else:
                     row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id
                         WHERE i.code=? AND i.kind=? AND d.start_date<=? AND d.end_date>=?
-                        ORDER BY d.end_date DESC, d.row_count DESC, i.received_at DESC, i.id DESC
+                        ORDER BY d.start_date ASC, d.row_count DESC, i.received_at DESC, d.id DESC
                         LIMIT 1""", (code, kind, date, date)).fetchone()
                     if not row:
                         row = conn.execute("""SELECT d.id FROM ingestion i JOIN dataset d ON d.id=i.dataset_id

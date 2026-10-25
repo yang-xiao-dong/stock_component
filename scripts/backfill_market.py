@@ -22,7 +22,9 @@ from core.history.settings import current_config  # noqa: E402
 from core.history.store import HistoryStore    # noqa: E402
 from core.runtime_paths import user_data_path  # noqa: E402
 
-MAX_ROUNDS = 40  # 单标的单域安全上限（800根/轮 × 40 ≈ 32年）
+MAX_ROUNDS = 40  # 单标的单域安全上限（步进500根/轮 × 40 ≈ 80年）
+OVERLAP = 300    # 相邻窗口重叠根数：保证任意历史日期都存在「跨越该日且该日前
+                 # 深度≥OVERLAP」的单一版本（须≥组件最大窗口需求250根）
 
 
 def earliest_in_store(store, code, kind):
@@ -51,11 +53,8 @@ def main():
             if kind == "kline" and code.startswith("us"):
                 # 美股日K端点只回 2 根首尾标记（stock_api 已注明不可用）；参照股只需 close
                 continue
-            end = earliest_in_store(store, code, kind)  # None=从最新开始（首轮冷启动）
-            if end is not None and end <= args.until:
-                print(f"{code} {kind}: 已覆盖至 {end}，无需回补")
-                continue
             rounds = 0
+            end = None  # 每轮窗口终点：首轮取最新，之后按步进（窗口长度-重叠）回退
             while rounds < MAX_ROUNDS:
                 try:
                     batch = fetch(code, args.days, end=end)
@@ -67,14 +66,16 @@ def main():
                 rows = batch.rows
                 earliest = rows[0]["date"]
                 if end is not None and earliest >= end:
-                    break  # 该轮未把覆盖范围向前扩展（上市初的确认轮），不落库
+                    break  # 已到上市初，该轮不再向前扩展，不落库
                 store.save_batch(batch, config)
                 rounds += 1
-                print(f"{code} {kind}: 第{rounds}轮 {len(rows)} 根 止于 {earliest} 复权={batch.adjustment}")
+                print(f"{code} {kind}: 第{rounds}轮 {len(rows)} 根 {earliest}~{rows[-1]['date']}"
+                      f" 复权={batch.adjustment}")
                 if earliest <= args.until:
                     break
-                end = earliest
-            print(f"{code} {kind}: 完成，库内覆盖 {earliest_in_store(store, code, kind)} 起")
+                step = max(1, len(rows) - OVERLAP)
+                end = rows[step]["date"]
+            print(f"{code} {kind}: 完成{rounds}轮，库内覆盖 {earliest_in_store(store, code, kind)} 起")
     print(f"库内可回放交易日数: {before} -> {len(store.dates())}")
 
 
