@@ -178,7 +178,7 @@ function scrollActiveIntoView() {
 function render(rt) {
   lastRt = rt || lastRt;
   if (!rt) {
-    $('upd').textContent = '网络错误，重试中…';
+    $('upd').textContent = HISTORY_REPLAY ? '该日期无行情快照与日K（当日未采集）' : '网络错误，重试中…';
     return;
   }
 
@@ -201,7 +201,11 @@ function render(rt) {
   $('peStat').textContent = pe(rt.pe_static);
   $('pb').textContent = pe(rt.pb);
   $('mcap').textContent = rt.market_cap != null ? rt.market_cap.toFixed(0) + '亿' : '--';
-  $('upd').textContent = rt.time ? fmtTime(rt.time) + ' 更新' : '无时间数据';
+  // 离线还原行情无成交额/估值字段（由日K与分时末点还原，见 data_source）
+  const restored = HISTORY_REPLAY && rt.amount == null;
+  $('upd').textContent = rt.time
+    ? (restored ? `${rt.time.slice(4, 6)}-${rt.time.slice(6, 8)} 收盘 · 日K还原` : fmtTime(rt.time) + ' 更新')
+    : '无时间数据';
 
   $('status').textContent = isTrading() ? '● 交易中' : '已收盘';
   document.title = `${rt.name || '--'} ${fmtCode(rt.code)}`;

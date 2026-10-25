@@ -94,6 +94,43 @@ class DataSourceTests(unittest.TestCase):
             self.assertEqual(data_source.get_mode(), {"mode": "offline", "date": "2026-09-22"})
             self.assertEqual(data_source.get_realtime("sh600001")["price"], 12)
 
+    def test_offline_missing_quote_restores_from_kline(self):
+        from core.data_define.history import MarketBatch
+        result = data_source.capture_today()
+        self.assertTrue(result["ok"], result)
+        rows = [
+            {"date": "2026-09-23", "open": 10, "close": 11, "high": 11.5, "low": 9.8},
+            {"date": "2026-09-24", "open": 11, "close": 12, "high": 12.5, "low": 10.8},
+        ]
+        self.service.store.save_batch(MarketBatch(
+            code="sh600001", kind="kline", rows=rows, raw=rows,
+            requested_count=2, adjustment="qfq"), settings())
+        minute = [{"date": "2026-09-24", "time": "09:30", "price": 11, "vol": 5},
+                  {"date": "2026-09-24", "time": "15:00", "price": 12, "vol": 25}]
+        self.service.store.save_batch(MarketBatch(
+            code="sh600001", kind="minute", rows=minute, raw=minute), settings())
+
+        self.assertTrue(data_source.set_mode("offline", "2026-09-24"))
+        quote = data_source.get_realtime("sh600001")
+        self.assertIsNotNone(quote)
+        self.assertEqual(quote["name"], "测试甲")
+        self.assertEqual(quote["open"], 11)
+        self.assertEqual(quote["price"], 12)
+        self.assertEqual(quote["prev_close"], 11)
+        self.assertEqual(quote["change_pct"], 9.09)
+        self.assertEqual(quote["volume"], 25)   # 分时末点累计，库内口径为手
+        self.assertEqual(quote["time"], "20260924150000")
+        self.assertIsNone(quote["pe_ttm"])      # 估值与成交额无处还原，保持缺失
+        self.assertIsNone(quote["amount"])
+        # 批量接口不注入还原行情：组合/PE/分析组件的回放口径不变
+        self.assertEqual(data_source.get_realtime_batch(["sh600001"]), {})
+        # 当日无日K行的日期（仅有收盘价）不还原
+        close = [{"date": "2026-09-25", "close": 13}]
+        self.service.store.save_batch(MarketBatch(
+            code="sh600001", kind="close", rows=close, raw=close), settings())
+        self.assertTrue(data_source.set_mode("offline", "2026-09-25"))
+        self.assertIsNone(data_source.get_realtime("sh600001"))
+
 
 if __name__ == "__main__":
     unittest.main()

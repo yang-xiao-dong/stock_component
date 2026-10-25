@@ -11,6 +11,7 @@ from pathlib import Path
 
 from config import AUTO_SNAPSHOT, KLINE_DAYS
 from core import stock_api
+from core.data_define.quote import RealtimeQuote
 from core.data_define.snapshot import SNAPSHOT_DIR
 from core.data_define.history import DataModePreference
 from core.runtime_paths import user_data_path
@@ -147,7 +148,46 @@ def _auto_save_fired(scheduler):
 
 
 def get_realtime(code):
-    return get_realtime_batch([code]).get(code)
+    quote = get_realtime_batch([code]).get(code)
+    if quote or not is_offline():
+        return quote
+    return _replay_quote_from_history(code)
+
+
+def _replay_quote_from_history(code):
+    """离线回放无当日行情快照时，由库内当日事实还原可显示行情。
+
+    行情快照当日不采集即永久缺失，估值与成交额在库内无处可取，保持缺失
+    （前端显示 --，不用其他日期补）。今开/最高/最低/收盘与昨收基准来自同日
+    及前一交易日的日K行；成交量取当日分时末点累计（库内 minute.vol 统一为
+    手，外部源为股时在入库处折算）。仅个股视图的单点查询走此回退，批量接口
+    保持原样，组合/PE/分析组件的回放口径不受影响。
+    """
+    service = initialize()
+    date = get_mode()["date"]
+    bars = service.series("kline", code) or []
+    index = next((i for i, bar in enumerate(bars) if bar.get("date") == date), None)
+    if not index or not all(bars[index].get(key) for key in ("open", "close")) \
+            or not bars[index - 1].get("close"):
+        return None
+    bar, previous = bars[index], bars[index - 1]
+    minute = service.series("minute", code) or []
+    change = bar["close"] - previous["close"]
+    return RealtimeQuote(
+        name=_stock_name(code), code=code,
+        price=bar["close"], prev_close=previous["close"],
+        open=bar["open"], high=bar.get("high"), low=bar.get("low"),
+        time=date.replace("-", "") + "150000",
+        change=round(change, 2), change_pct=round(change / previous["close"] * 100, 2),
+        volume=minute[-1].get("vol") if minute else None,
+    ).to_dict()
+
+
+def _stock_name(code):
+    for stock in get_config("STOCKS", []):
+        if stock.get("code") == code:
+            return stock.get("name")
+    return None
 
 
 def get_realtime_batch(codes):
