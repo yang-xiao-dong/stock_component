@@ -42,6 +42,18 @@ class DataSourceTests(unittest.TestCase):
         self.assertTrue(data_source.set_mode("live"))
         self.assertFalse(data_source.is_offline())
 
+    def test_prev_close_falls_back_to_close_series_in_offline(self):
+        result = data_source.capture_today()
+        self.assertEqual(data_source.get_prev_close("sh600001"), 10)  # 在线：行情昨收
+        self.provider.forbidden = True
+        # 回放采集日（有行情快照）：仍用快照昨收
+        self.assertTrue(data_source.set_mode("offline", result["date"]))
+        self.assertEqual(data_source.get_prev_close("sh600001"), 10)
+        # 回放仅有收盘序列的更早日期（无快照，如历史救援日）：取前一交易日收盘
+        self.assertTrue(data_source.set_mode("offline", "2026-09-21"))
+        self.assertEqual(data_source.get_prev_close("sh600001"), 12)
+        self.assertIsNone(data_source.get_prev_close("missing"))
+
     def test_should_auto_save_and_next_day_rearm(self):
         self.assertFalse(data_source.should_auto_save(datetime(2026,9,21,15,4)))
         self.assertTrue(data_source.should_auto_save(datetime(2026,9,21,15,5)))

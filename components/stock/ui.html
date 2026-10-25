@@ -287,19 +287,24 @@ async function refresh() {
     const prevClose = (rt && (rt.prev_close || rt.open)) || 0;
     if (mode === 'min') {
       if (!minuteCache?.length) drawChartMessage('分时数据加载中…');
-      if (rt && (!minuteCache?.length || Date.now() - minuteAt > 60000)) {
+      if (!minuteCache?.length || Date.now() - minuteAt > 60000) {
         minuteCache = await py.get_minute_data();
         minuteAt = Date.now();
       }
-      if (minuteCache && rt) drawChart(minuteCache, prevClose);
-      else drawChartMessage('分时数据暂不可用，稍后自动重试');
+      let base = prevClose;
+      if (minuteCache?.length && !base) base = await py.get_stock_prev_close?.() || 0;
+      if (minuteCache?.length && base) drawChart(minuteCache, base);
+      else if (!minuteCache?.length) drawChartMessage(HISTORY_REPLAY ? '该离线日期无当日分时（未采集，不可回补）'
+                                           : '分时数据暂不可用，稍后自动重试');
+      else drawChartMessage('无昨收基准，暂无法绘制分时');
     } else if (mode === 'k') {
       if (!klineCache?.length) {
         drawChartMessage('日 K 数据加载中…');
         klineCache = await py.get_kline();
       }
       if (klineCache) drawKline(klineCache);
-      else drawChartMessage('日 K 数据暂不可用，稍后自动重试');
+      else drawChartMessage(HISTORY_REPLAY ? '该日期日K窗口不足（早于上市或长期停牌）'
+                                           : '日 K 数据暂不可用，稍后自动重试');
     }
   } catch (e) {
     $('upd').textContent = '连接失败…';
@@ -374,12 +379,17 @@ async function init() {
 }
 
 let started = false;
+let HISTORY_REPLAY = false;   // 离线历史回放：缺失数据不可重试，提示语区分
 document.addEventListener('DOMContentLoaded', () => {
   if (!started) { started = true; init(); }
 });
 whenBridgeReady(() => {
-  if (!started) { started = true; init(); }
-  else refresh();
+  api().get_stock_data_mode?.().then(m => { HISTORY_REPLAY = !!(m && m.mode === 'offline'); })
+    .catch(() => {})
+    .finally(() => {
+      if (!started) { started = true; init(); }
+      else refresh();
+    });
 });
 </script>
 </body>

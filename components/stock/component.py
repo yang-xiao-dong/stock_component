@@ -55,6 +55,14 @@ class StockApi:
         code = code or (self.get_current_stock() or {}).get("code")
         return data_source.get_realtime(code) if code else None
 
+    def get_stock_data_mode(self):
+        return data_source.get_mode()
+
+    def get_stock_prev_close(self, code=None):
+        """分时图昨收基准：离线回放时由收盘序列前一日提供。"""
+        code = code or (self.get_current_stock() or {}).get("code")
+        return data_source.get_prev_close(code) if code else None
+
     def get_minute_data(self, code=None):
         code = code or (self.get_current_stock() or {}).get("code")
         return data_source.get_minute_data(code) if code else None

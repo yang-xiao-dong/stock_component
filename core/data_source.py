@@ -165,3 +165,19 @@ def get_kline(code, count=None):
 
 def get_close_series(code, count=250):
     return initialize().series("close", code, count) or None
+
+
+def get_prev_close(code):
+    """昨收基准：在线取行情快照；离线回放无快照时取收盘序列的前一交易日。
+
+    历史日期的行情快照不可再生（当日不采即永久缺失），分时图基准改由
+    已回补的收盘序列提供——救援入库的历史分时因此可正常绘制。
+    """
+    quote = get_realtime(code)
+    if quote and quote.get("prev_close"):
+        return quote["prev_close"]
+    if is_offline():
+        closes = get_close_series(code, 2) or []
+        if len(closes) >= 2:
+            return closes[-2]["close"]
+    return None
