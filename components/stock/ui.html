@@ -185,15 +185,16 @@ function render(rt) {
 
   $('name').textContent = rt.name || stocks[currentStockIndex]?.name || '--';
   $('code').textContent = fmtCode(stocks[currentStockIndex]?.code || rt.code);
-  $('price').textContent = rt.price != null ? rt.price.toFixed(2) : '--';
-  const chg = rt.change != null ? ((rt.change > 0 ? '+' : '') + rt.change.toFixed(2)) : '--';
-  const pct = rt.change_pct != null ? ((rt.change_pct > 0 ? '+' : '') + rt.change_pct.toFixed(2) + '%') : '';
+  $('price').textContent = rt.price != null ? Number(rt.price).toFixed(2) : '--';
+  const chg = rt.change != null ? ((rt.change > 0 ? '+' : '') + Number(rt.change).toFixed(2)) : '--';
+  const pct = rt.change_pct != null ? ((rt.change_pct > 0 ? '+' : '') + Number(rt.change_pct).toFixed(2) + '%') : '';
   $('chg').textContent = pct ? `${chg}  ${pct}` : chg;
   $('price').className = 'price ' + cls(rt.change_pct || 0);
   $('chg').className = 'chg ' + cls(rt.change_pct || 0);
-  $('open').textContent = rt.open != null ? rt.open.toFixed(2) : '--';
-  $('high').textContent = rt.high != null ? rt.high.toFixed(2) : '--';
-  $('low').textContent = rt.low != null ? rt.low.toFixed(2) : '--';
+  // Number() 容错：2026-11-02 漏转窗口期入库的行情载荷 high/low 为字符串（见发布对照表 1.2.10）
+  $('open').textContent = rt.open != null ? Number(rt.open).toFixed(2) : '--';
+  $('high').textContent = rt.high != null ? Number(rt.high).toFixed(2) : '--';
+  $('low').textContent = rt.low != null ? Number(rt.low).toFixed(2) : '--';
   $('vol').textContent = rt.volume != null ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
   const ratio = rt.liang_ratio;
   $('volRatio').textContent = ratio != null ? `量比 ${ratio.toFixed(2)}` : '';
@@ -381,9 +382,11 @@ async function refresh() {
                                            : '日 K 数据暂不可用，稍后自动重试');
     }
   } catch (e) {
-    $('upd').textContent = '连接失败…';
-    drawChartMessage('图表加载失败，稍后自动重试');
-    console.error('Refresh error:', e);
+    // 把真实异常显示出来（窗口版无控制台，报错必须看得见）；完整堆栈回传后台日志
+    const detail = (e && (e.message || String(e))) || '未知错误';
+    $('upd').textContent = '连接失败：' + detail;
+    drawChartMessage('图表加载失败：' + detail);
+    try { api()?.report_ui_error?.(String((e && e.stack) || e)); } catch (_) {}
   }
 }
 

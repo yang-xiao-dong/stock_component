@@ -11,12 +11,14 @@
 """
 from pathlib import Path
 from html import escape
+import logging
 import threading
 
 import webview
 
 from config import APP_TITLE, WINDOW
 from core import data_source, http_server
+from core import app_log
 from core.runtime_paths import resource_path
 from core.component_layout import ComponentLayoutStore
 from core.scheduler import Scheduler
@@ -56,6 +58,10 @@ class AppApi(WindowControls):
     def get_components(self):
         """组件清单（前端信息用）"""
         return [{"id": c.id, "title": c.title} for c in self._components]
+
+    def report_ui_error(self, message):
+        """组件页面把 JS 异常写入后台日志（窗口版无控制台，前端报错必须有迹可查）"""
+        logging.getLogger("ui").error("前端异常: %s", message)
 
     def get_component_order(self):
         with self._layout_lock:
@@ -119,6 +125,7 @@ def assemble(components):
     """装配并启动单窗口应用：本地静态服务 → 动态生成外壳页（上下堆叠组件，可滚动）
     → 建窗 → 挂载组件 API → 起调度器 → 进入主循环"""
     components = list(components)
+    app_log.setup()
     scheduler = Scheduler()
     data_source.initialize()
     api = AppApi(components)
