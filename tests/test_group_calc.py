@@ -131,6 +131,21 @@ def test_contribution_no_data():
     assert rows == [] and total is None
 
 
+def test_group_minute_vol_total_aggregates_industry_volume():
+    # 行业量能：各股单分钟量合计（累计量差分）；无量股不计入，序列损坏整股剔除
+    m = {"a": [{"time": "09:30", "price": 10, "vol": 100},
+               {"time": "09:31", "price": 11, "vol": 260}],
+         "b": [{"time": "09:30", "price": 20, "vol": 50},
+               {"time": "09:31", "price": 19, "vol": 80}],
+         "c": [{"time": "09:30", "price": 5, "vol": None},   # 无量股
+               {"time": "09:31", "price": 5, "vol": None}]}
+    out = group_calc.build_group_minute(m, {"a": 10, "b": 20, "c": 5}, None, 30000)
+    assert out["vol_total"] == [150.0, 190.0]
+    out2 = group_calc.build_group_minute(
+        {k: v for k, v in m.items() if k != "c"}, {"a": 10, "b": 20}, None, 20000)
+    assert out2["vol_total"] == [150.0, 190.0]   # 无量股不影响合计
+
+
 if __name__ == "__main__":
     tests = [(k, v) for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

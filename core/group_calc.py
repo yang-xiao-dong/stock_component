@@ -21,6 +21,7 @@ from core.data_define import (
     KlineBar,
     StockSeries,
 )
+from core import vol_calc
 
 
 def default_shares(prev_closes, principal):
@@ -70,7 +71,18 @@ def build_group_minute(minute_map, prev_closes, shares=None, principal=0.0):
     for t in times:
         vals = [series[c][t] for c in codes if t in series[c]]
         total.append(sum(vals) if vals else None)
-    return GroupMinute(times=times, total=total, stocks=stocks).to_dict()
+
+    # 行业量能：组内各股单分钟成交量合计（累计量差分，口径同 core/vol_calc；
+    # 个股量序列损坏/缺失则该股整段不计入，宁缺毋错）
+    vol_by_time = {}
+    for code in codes:
+        deltas = vol_calc.minute_deltas(minute_map[code])
+        if not deltas:
+            continue
+        for p, d in zip(minute_map[code], deltas):
+            vol_by_time[p["time"]] = vol_by_time.get(p["time"], 0.0) + d
+    vol_total = [vol_by_time.get(t) for t in times]
+    return GroupMinute(times=times, total=total, stocks=stocks, vol_total=vol_total).to_dict()
 
 
 def build_group_kline(kline_map, principal, max_points=None):

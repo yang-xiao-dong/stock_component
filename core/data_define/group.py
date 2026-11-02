@@ -24,6 +24,8 @@ class GroupMinute(Contract):
     times: list = None          # ["09:30", ...]
     total: list = None          # 组合当日盈亏合计 [¥|None]
     stocks: list = None         # [StockSeries]
+    vol_total: list = None      # 行业量能：组内各股单分钟成交量(手)合计 [float|None]，
+                                # 与 times 对齐；差分口径同 core/vol_calc，无量股不计入
 
 
 @dataclass

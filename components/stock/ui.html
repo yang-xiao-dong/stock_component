@@ -242,12 +242,17 @@ function volPaneSeparator(ctx, w, priceH) {
 }
 
 /* 分区标识：每个图区必须标明画的是什么（约定见 docs/数据接口契约.md） */
-function paneTag(ctx, x, y, text, color) {
+function paneTag(ctx, x, y, text, color, align) {
   ctx.fillStyle = color || 'rgba(255,255,255,.5)';
   ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
-  ctx.textAlign = 'left';
+  ctx.textAlign = align || 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText(text, x, y);
+}
+
+/* 量参考值：手 -> 万手 */
+function fmtHand(v) {
+  return v >= 10000 ? (v / 10000).toFixed(1) + '万手' : Math.round(v) + '手';
 }
 
 function drawChart(points, prevClose) {
@@ -259,17 +264,18 @@ function drawChart(points, prevClose) {
   const prices = points.map(p => p.price);
   let max = Math.max(...prices, prevClose), min = Math.min(...prices, prevClose);
   const pad = (max - min) * 0.1 || 0.1; max += pad; min -= pad;
-  const N = 242;
-  const x = i => 2 + i / (N - 1) * (w - 4);
+  const umax = max - pad, umin = min + pad;
+  const N = 242, PR = 42, cw = w - PR;
+  const x = i => 2 + i / (N - 1) * (cw - 4);
   const y = p => 6 + (max - p) / (max - min) * (priceH - 12);
 
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {
-    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(w, priceH*f); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(cw, priceH*f); ctx.stroke();
   });
   ctx.strokeStyle = 'rgba(255,255,255,.18)';
   ctx.setLineDash([3,3]); ctx.beginPath();
-  ctx.moveTo(0, y(prevClose)); ctx.lineTo(w, y(prevClose)); ctx.stroke();
+  ctx.moveTo(0, y(prevClose)); ctx.lineTo(cw, y(prevClose)); ctx.stroke();
   ctx.setLineDash([]);
 
   const color = points[points.length-1].price >= prevClose ? '#ff5252' : '#26c281';
@@ -285,11 +291,18 @@ function drawChart(points, prevClose) {
   ctx.fillStyle = g; ctx.fill();
   paneTag(ctx, 4, 12, '分时价', color);
 
+  // 右缘价格刻度（参考值）+ 昨收基准
+  paneTag(ctx, cw + 4, y(umax) + 3, umax.toFixed(2), '#6b7382');
+  paneTag(ctx, cw + 4, y(prevClose) + 3, prevClose.toFixed(2), 'rgba(255,255,255,.4)');
+  paneTag(ctx, cw + 4, y(umin) + 3, umin.toFixed(2), '#6b7382');
+
   if (!deltas) return;
   volPaneSeparator(ctx, w, priceH);
   const top = priceH + 12, bottom = h;   // 上留一行给分区标识
   paneTag(ctx, 4, priceH + 10, '分钟成交量（红涨绿跌）');
   const maxD = Math.max(...deltas) || 1;
+  const cum = deltas.reduce((a, b) => a + b, 0);
+  paneTag(ctx, w - 4, priceH + 10, `峰值 ${fmtHand(maxD)} · 累计 ${fmtHand(cum)}`, '#6b7382', 'right');
   ctx.globalAlpha = .8;
   points.forEach((p, i) => {
     if (!deltas[i]) return;
@@ -311,12 +324,14 @@ function drawKline(bars) {
   let max = -1e9, min = 1e9;
   bars.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
   const pad = (max - min) * 0.08 || 0.1; max += pad; min -= pad;
+  const umax = max - pad, umin = min + pad;
   const y = p => 6 + (max - p) / (max - min) * (priceH - 12);
-  const slot = (w - 4) / bars.length, bw = Math.max(1.5, slot * 0.6);
+  const PR = 42, cw = w - PR;
+  const slot = (cw - 4) / bars.length, bw = Math.max(1.5, slot * 0.6);
 
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {
-    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(w, priceH*f); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(cw, priceH*f); ctx.stroke();
   });
 
   bars.forEach((b, i) => {
@@ -330,6 +345,10 @@ function drawKline(bars) {
     ctx.fillRect(cx - bw/2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
   });
   paneTag(ctx, 4, 12, '日K蜡烛（红涨绿跌）');
+  // 右缘价格刻度（参考值）
+  paneTag(ctx, cw + 4, y(umax) + 3, umax.toFixed(2), '#6b7382');
+  paneTag(ctx, cw + 4, y((umax + umin) / 2) + 3, ((umax + umin) / 2).toFixed(2), '#6b7382');
+  paneTag(ctx, cw + 4, y(umin) + 3, umin.toFixed(2), '#6b7382');
 
   if (!hasVol) return;
   volPaneSeparator(ctx, w, priceH);
@@ -353,6 +372,10 @@ function drawKline(bars) {
   paneTag(ctx, 4, priceH + 10, '日成交量（红涨绿跌）· ');
   paneTag(ctx, 4 + ctx.measureText('日成交量（红涨绿跌）· ').width, priceH + 10,
           '5日均量', 'rgba(230,200,90,.8)');
+  const lastVol = vols[vols.length - 1], lastMa = ma5[ma5.length - 1];
+  const ref = [lastVol != null ? '最新 ' + fmtHand(lastVol) : null,
+               lastMa != null ? '5日均 ' + fmtHand(lastMa) : null].filter(Boolean).join(' · ');
+  paneTag(ctx, w - 4, priceH + 10, ref, '#6b7382', 'right');
 }
 
 function redrawChart() {

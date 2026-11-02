@@ -84,9 +84,12 @@ def test_alert_contract_roundtrip_and_missing_fields():
 
 def test_group_roundtrip_nested():
     gm = dd.GroupMinute(times=["09:30", "09:31"], total=[0.0, 100.0],
-                        stocks=[dd.StockSeries(code="a", data=[0.0, 100.0])])
+                        stocks=[dd.StockSeries(code="a", data=[0.0, 100.0])],
+                        vol_total=[150.0, 190.0])
     d = gm.to_dict()
     assert d["stocks"][0]["code"] == "a" and d["total"][1] == 100.0
+    assert dd.GroupMinute.from_dict(d).vol_total == [150.0, 190.0]
+    assert dd.GroupMinute.from_dict({"times": []}).vol_total is None
 
     gk = dd.GroupKline(principal=100000, dates=["2026-09-21"],
                        candles=[dd.KlineBar(date="2026-09-21", open=100000,

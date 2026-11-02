@@ -19,7 +19,7 @@ function fmtWan(v) {
   return (v < 0 ? '-' : '') + (a >= 10000 ? (a / 10000).toFixed(1) + '万' : String(Math.round(a)));
 }
 
-/* ---------------- 分时（当日盈亏 ¥）：个股细线 + 组合合计加粗线 + 0轴 ---------------- */
+/* ---------------- 分时（当日盈亏 ¥）：个股细线 + 组合合计加粗线 + 0轴 + 行业量能副图 ---------------- */
 function drawMinute(data) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
@@ -29,6 +29,12 @@ function drawMinute(data) {
   }
 
   const PR = 48, PT = 10, PB = 14;
+  // 行业量能副图：组内各股分钟量合计（无量数据日期不画，价格图占满）
+  const vols = data.vol_total || [];
+  const hasVol = vols.some(v => v != null);
+  const priceBottom = hasVol ? PT + (h - PT - PB) * 0.62 : h - PB;
+  const volTagY = priceBottom + 5, volTop = priceBottom + 14, volBottom = h - PB;
+
   const all = [];
   data.stocks.forEach(s => s.data.forEach(v => { if (v != null) all.push(v); }));
   (data.total || []).forEach(v => { if (v != null) all.push(v); });
@@ -42,9 +48,10 @@ function drawMinute(data) {
 
   const N = data.times.length, cw = w - PR;
   const x = i => 2 + i / (N - 1) * (cw - 6);
-  const y = v => PT + (max - v) / (max - min) * (h - PT - PB);
+  const y = v => PT + (max - v) / (max - min) * (priceBottom - PT);
 
-  hgrid(ctx, cw, h, PT, PB);
+  if (hasVol) hgrid(ctx, cw, priceBottom, PT, 2);   // 网格只铺价格区
+  else hgrid(ctx, cw, h, PT, PB);
 
   // 0 轴虚线
   ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.setLineDash([3, 3]);
@@ -69,7 +76,7 @@ function drawMinute(data) {
       if (!started) { ctx.moveTo(x(i), y(v)); started = true; } else ctx.lineTo(x(i), y(v));
     });
     ctx.lineTo(x(last), y(0)); ctx.lineTo(x(first), y(0)); ctx.closePath();
-    const g = ctx.createLinearGradient(0, PT, 0, h - PB);
+    const g = ctx.createLinearGradient(0, PT, 0, priceBottom);
     g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(1, 'rgba(255,255,255,.02)');
     ctx.fillStyle = g; ctx.fill();
     strokeSeries(ctx, total.map((v, i) => [x(i), v == null ? null : y(v)]), '#ffffff', 1.8, 0.95);
@@ -82,6 +89,34 @@ function drawMinute(data) {
   ctx.fillText((umax > 0 ? '+' : '') + fmtWan(umax), cw + 4, y(umax) + 3);
   ctx.fillText('0', cw + 4, y(0) + 3);
   ctx.fillText(fmtWan(umin), cw + 4, y(umin) + 3);
+
+  if (hasVol) {
+    // 分隔线 + 标识 + 累计总量（红涨绿跌按组合合计方向）
+    ctx.strokeStyle = 'rgba(255,255,255,.10)';
+    ctx.beginPath(); ctx.moveTo(0, volTagY); ctx.lineTo(cw, volTagY); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.fillText('行业量能·分钟量合计（红涨绿跌）', 2, volTagY + 9);
+    const cum = vols.reduce((a, v) => a + (v || 0), 0);
+    ctx.textAlign = 'right';
+    ctx.fillText('累计 ' + fmtWan(cum) + ' 手', cw - 2, volTagY + 9);
+    ctx.textAlign = 'left';
+
+    const maxD = Math.max(...vols.filter(v => v != null)) || 1;
+    ctx.globalAlpha = .8;
+    vols.forEach((v, i) => {
+      if (!v) return;
+      const cur = total[i] != null ? total[i] : (total[i - 1] ?? 0);
+      const pre = total[i - 1] ?? 0;
+      ctx.fillStyle = cur >= pre ? '#ff5252' : '#26c281';
+      const bh = Math.max(1, v / maxD * (volBottom - volTop));
+      ctx.fillRect(x(i) - 0.6, volBottom - bh, 1.2, bh);
+    });
+    ctx.globalAlpha = 1;
+    // 峰值参考（右轴）
+    ctx.fillStyle = '#6b7382';
+    ctx.fillText(fmtWan(maxD) + '手/分', cw + 4, volTop + 3);
+  }
+
   ctx.fillText(data.times[0], 2, h - 3);
   ctx.textAlign = 'right'; ctx.fillText(data.times[N - 1], cw - 2, h - 3);
   ctx.textAlign = 'left';
