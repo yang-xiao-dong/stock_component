@@ -24,6 +24,7 @@ class RealtimeQuote(Contract):
     pe_static: float = None   # 市盈率（静，上年年报，仅A股）
     pb: float = None          # 市净率（仅A股；美股/港股该位置是公司英文名，解析为 None）
     market_cap: float = None  # 总市值（A股亿元¥；美股亿美元$）
+    liang_ratio: float = None  # 量比（当日每分钟均量 / 近5日每分钟均量，仅A股；离线回放由库内分时折算）
 
     def is_complete(self) -> bool:
         """关键字段齐全（停牌/异常行情时可用于降级判断）"""

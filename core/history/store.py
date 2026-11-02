@@ -192,6 +192,21 @@ class HistoryStore:
                 WHERE code LIKE 'sh%' OR code LIKE 'sz%'
                 ORDER BY trade_date""")]
 
+    def minute_day_totals(self, code, before, days=5):
+        """近 N 个交易日（严格早于 before）的分时全天累计成交量（手），供量比折算。
+
+        同一交易日多个采集版本（当日采集与 day/query 历史批次）取最大累计值；
+        按日期倒序返回，长度可能小于 days，vol 缺失的日期剔除。旧快照误存
+        成交额的日期原样返回（口径见数据库设计第 5 节），误差由折算侧承担。
+        """
+        with self.connection() as conn:
+            rows = conn.execute("""SELECT trade_date,
+                MAX(CAST(json_extract(payload, '$.vol') AS REAL)) AS total
+                FROM market_point WHERE code=? AND kind='minute' AND trade_date<?
+                GROUP BY trade_date ORDER BY trade_date DESC LIMIT ?""",
+                                (code, before, days)).fetchall()
+        return [row[1] for row in rows if row[1]]
+
     def save_replay(self, context: ReplayContext):
         valid_date(context.date)
         identity = digest([context.date, context.datasets, context.config, context.missing, context.origin])

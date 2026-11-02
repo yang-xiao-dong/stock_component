@@ -43,9 +43,10 @@ def _get_chart_data(path, params):
 def _opt_float(f, idx):
     """可选字段转 float：越界/空串/非数值（如美股该位置是公司名）返回 None"""
     try:
-        v = f[idx].strip()
-        return float(v) if v else None
-    except (IndexError, ValueError):
+        v = f[idx]
+        v = v.strip() if isinstance(v, str) else v
+        return float(v) if v not in (None, "") else None
+    except (IndexError, ValueError, TypeError):
         return None
 
 
@@ -53,7 +54,7 @@ def _parse_fields(f):
     """解析腾讯行情字段为 dict（字段契约见 core/data_define/quote.py）
     腾讯字段: 1名称 2代码(美股带后缀如QCOM.OQ) 3最新价 4昨收 5今开 6成交量(手) ...
     30时间 31涨跌 32涨跌% 33最高 34最低 36成交量(手) 37成交额(万)
-    39市盈率TTM 45总市值 46市净率(仅A股) 52市盈率动(仅A股) 53市盈率静(仅A股)
+    39市盈率TTM 45总市值 46市净率(仅A股) 49量比(仅A股) 52市盈率动(仅A股) 53市盈率静(仅A股)
     """
     quote_time = f[30].strip()
     if "-" in quote_time:
@@ -68,13 +69,14 @@ def _parse_fields(f):
         time=quote_time,
         change=float(f[31]),
         change_pct=float(f[32]),
-        high=float(f[33]),
-        low=float(f[34]),
+        high=f[33],
+        low=f[34],
         volume=float(f[36]),          # 手
         amount=float(f[37]) / 10000,  # 亿元
         pe_ttm=_opt_float(f, 39),
         market_cap=_opt_float(f, 45),
         pb=_opt_float(f, 46),
+        liang_ratio=_opt_float(f, 49),
         pe_dynamic=_opt_float(f, 52),
         pe_static=_opt_float(f, 53),
     ).to_dict()
@@ -152,7 +154,8 @@ def get_kline_batch(code=CODE, count=60, period="day", end=None):
         return None
     bars = [
         KlineBar(date=row[0], open=float(row[1]), close=float(row[2]),
-                 high=float(row[3]), low=float(row[4])).to_dict()
+                 high=float(row[3]), low=float(row[4]),
+                 vol=_opt_float(row, 5)).to_dict()   # 手；备用端点/旧源个别行缺列为 None
         for row in rows if len(row) >= 5
     ]
     return MarketBatch(code=code, kind="kline", adjustment=adjustment, rows=bars,

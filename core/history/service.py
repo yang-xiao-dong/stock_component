@@ -163,6 +163,10 @@ class HistoryService:
         rows = self.store.read(identity, count=count, end_date=replay.date if replay else None)
         return rows if generation == self.generation() else []
 
+    def minute_day_totals(self, code, before, days=5):
+        """离线回放量比兜底用的历史分时日总量查询（透传仓储，见 store.minute_day_totals）。"""
+        return self.store.minute_day_totals(code, before, days)
+
     def collect(self, force=False):
         """采集全组件需求并固定本轮引用；部分成功仍入库，缺失清单随回放保存。"""
         with self._collect_lock:

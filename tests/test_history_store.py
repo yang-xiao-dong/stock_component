@@ -113,6 +113,20 @@ class StoreTests(unittest.TestCase):
         dates = self.store.dates()
         self.assertEqual(dates, ["2026-09-20", "2026-09-21", "2026-09-22"])
 
+    def test_minute_day_totals_recent_days_only(self):
+        # 量比兜底查询：严格早于给定日的近 N 个交易日全天累计量，倒序；
+        # 同日多版本（当日采集与历史批次）取最大累计值，给定日自身不计入
+        code = "sh600001"
+        self.store.save_batch(self.provider.get_minute_batch(code), self.config)  # 09-22，不应计入
+        self.store.save_batch(Provider(day="2026-09-21").get_minute_batch(code), self.config)
+        bigger = Provider(day="2026-09-21").get_minute_batch(code)
+        bigger.rows[-1]["vol"] = 12
+        self.store.save_batch(bigger, self.config)
+        self.store.save_batch(Provider(day="2026-09-18").get_minute_batch(code), self.config)
+        self.assertEqual(self.store.minute_day_totals(code, "2026-09-22", days=2), [12.0, 10.0])
+        self.assertEqual(self.store.minute_day_totals(code, "2026-09-23", days=5), [10.0, 12.0, 10.0])
+        self.assertEqual(self.store.minute_day_totals("sh600002", "2026-09-22"), [])
+
     def test_backup_export_restore_preserve_replay_and_refuse_overwrite(self):
         identity = self.store.save_batch(self.provider.get_kline_batch("sh600001", 5), self.config)
         replay = ReplayContext(date="2026-09-22", config=self.config, datasets={"kline:sh600001": identity})

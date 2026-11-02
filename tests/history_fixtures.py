@@ -56,7 +56,7 @@ class Provider:
         rows = [{"date": d, "close": self.price} for d in days]
         if kind == "kline":
             for row in rows:
-                row.update(open=10, high=self.price+1, low=9)
+                row.update(open=10, high=self.price+1, low=9, vol=1000)
         return MarketBatch(code=code, kind=kind, rows=rows, raw=deepcopy(rows), requested_count=count,
                            adjustment=self.adjustment if kind == "kline" else "none")
 

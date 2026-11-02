@@ -12,3 +12,4 @@ class KlineBar(Contract):
     close: float = None
     high: float = None
     low: float = None
+    vol: float = None   # 成交量（手）。2026-11-02 起新采集包含；旧行/组合市值蜡烛为 None，不回填

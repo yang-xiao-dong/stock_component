@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config import AUTO_SNAPSHOT, KLINE_DAYS
-from core import stock_api
+from core import stock_api, vol_calc
 from core.data_define.quote import RealtimeQuote
 from core.data_define.snapshot import SNAPSHOT_DIR
 from core.data_define.history import DataModePreference
@@ -173,6 +173,7 @@ def _replay_quote_from_history(code):
     bar, previous = bars[index], bars[index - 1]
     minute = service.series("minute", code) or []
     change = bar["close"] - previous["close"]
+    ratio = vol_calc.volume_ratio(minute, service.minute_day_totals(code, date))
     return RealtimeQuote(
         name=_stock_name(code), code=code,
         price=bar["close"], prev_close=previous["close"],
@@ -180,6 +181,7 @@ def _replay_quote_from_history(code):
         time=date.replace("-", "") + "150000",
         change=round(change, 2), change_pct=round(change / previous["close"] * 100, 2),
         volume=minute[-1].get("vol") if minute else None,
+        liang_ratio=round(ratio, 2) if ratio else None,
     ).to_dict()
 
 

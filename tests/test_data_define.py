@@ -17,14 +17,15 @@ def test_quote_roundtrip():
                          change=1.5, change_pct=1.5, high=102.0, low=99.8,
                          volume=12345.0, amount=12.5,
                          pe_ttm=54.4, pe_dynamic=43.3, pe_static=71.6,
-                         pb=15.0, market_cap=744.6)
+                         pb=15.0, market_cap=744.6, liang_ratio=0.82)
     d = q.to_dict()
     assert set(d) == {"name", "code", "price", "prev_close", "open", "time",
                       "change", "change_pct", "high", "low", "volume", "amount",
-                      "pe_ttm", "pe_dynamic", "pe_static", "pb", "market_cap"}
+                      "pe_ttm", "pe_dynamic", "pe_static", "pb", "market_cap",
+                      "liang_ratio"}
     q2 = dd.RealtimeQuote.from_dict(d)
     assert q2.price == 101.5 and q2.code == "sh603893" and q2.is_complete()
-    assert q2.pe_ttm == 54.4 and q2.pb == 15.0
+    assert q2.pe_ttm == 54.4 and q2.pb == 15.0 and q2.liang_ratio == 0.82
 
 
 def test_from_dict_tolerant():
@@ -56,8 +57,11 @@ def test_component_layout_contract():
 
 
 def test_kline_minute_roundtrip():
-    bars = [dd.KlineBar(date="2026-09-21", open=10, close=11, high=12, low=9)]
+    bars = [dd.KlineBar(date="2026-09-21", open=10, close=11, high=12, low=9, vol=123000)]
     assert dd.KlineBar.from_dict(bars[0].to_dict()).close == 11
+    assert dd.KlineBar.from_dict(bars[0].to_dict()).vol == 123000
+    # 旧版本日K行无量字段 -> None（历史库旧行不回填）
+    assert dd.KlineBar.from_dict({"date": "2026-09-21", "close": 11}).vol is None
     p = dd.MinutePoint(time="09:31", price=11.0, vol=123)
     assert dd.MinutePoint.from_dict(p.to_dict()).time == "09:31"
     assert dd.MinutePoint.from_dict({"time": "09:31", "price": 11}).date is None
