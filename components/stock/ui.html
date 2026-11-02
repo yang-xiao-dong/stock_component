@@ -334,7 +334,9 @@ function drawKline(bars) {
     const bh = Math.max(1, v / maxV * (bottom - top));
     ctx.fillRect(2 + slot * i + (slot - bw) / 2, bottom - bh, bw, bh);
   });
-  strokeSeries(ctx, ma5.map((v, i) => v == null ? null : [2 + slot * (i + 0.5), bottom - v / maxV * (bottom - top)]),
+  // strokeSeries 约定断点传 [x, null]（内部先读 p[1]），不能传裸 null
+  strokeSeries(ctx, ma5.map((v, i) => [2 + slot * (i + 0.5),
+               v == null ? null : bottom - v / maxV * (bottom - top)]),
                'rgba(230,200,90,.9)', 1);
   ctx.fillStyle = 'rgba(230,200,90,.8)';
   ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
