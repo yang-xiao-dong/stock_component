@@ -241,6 +241,15 @@ function volPaneSeparator(ctx, w, priceH) {
   ctx.beginPath(); ctx.moveTo(0, priceH + 1.5); ctx.lineTo(w, priceH + 1.5); ctx.stroke();
 }
 
+/* 分区标识：每个图区必须标明画的是什么（约定见 docs/数据接口契约.md） */
+function paneTag(ctx, x, y, text, color) {
+  ctx.fillStyle = color || 'rgba(255,255,255,.5)';
+  ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, x, y);
+}
+
 function drawChart(points, prevClose) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
@@ -274,10 +283,12 @@ function drawChart(points, prevClose) {
   const g = ctx.createLinearGradient(0, 0, 0, priceH);
   g.addColorStop(0, color + '55'); g.addColorStop(1, color + '05');
   ctx.fillStyle = g; ctx.fill();
+  paneTag(ctx, 4, 12, '分时价', color);
 
   if (!deltas) return;
   volPaneSeparator(ctx, w, priceH);
-  const top = priceH + 3, bottom = h;
+  const top = priceH + 12, bottom = h;   // 上留一行给分区标识
+  paneTag(ctx, 4, priceH + 10, '分钟成交量（红涨绿跌）');
   const maxD = Math.max(...deltas) || 1;
   ctx.globalAlpha = .8;
   points.forEach((p, i) => {
@@ -318,6 +329,7 @@ function drawKline(bars) {
     ctx.fillStyle = color;
     ctx.fillRect(cx - bw/2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
   });
+  paneTag(ctx, 4, 12, '日K蜡烛（红涨绿跌）');
 
   if (!hasVol) return;
   volPaneSeparator(ctx, w, priceH);
@@ -338,10 +350,9 @@ function drawKline(bars) {
   strokeSeries(ctx, ma5.map((v, i) => [2 + slot * (i + 0.5),
                v == null ? null : bottom - v / maxV * (bottom - top)]),
                'rgba(230,200,90,.9)', 1);
-  ctx.fillStyle = 'rgba(230,200,90,.8)';
-  ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('量柱 · 5日均量', 4, priceH + 10);
+  paneTag(ctx, 4, priceH + 10, '日成交量（红涨绿跌）· ');
+  paneTag(ctx, 4 + ctx.measureText('日成交量（红涨绿跌）· ').width, priceH + 10,
+          '5日均量', 'rgba(230,200,90,.8)');
 }
 
 function redrawChart() {
