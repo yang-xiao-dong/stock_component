@@ -43,7 +43,8 @@ class ChartApiTests(unittest.TestCase):
         with patch.object(stock_api.session, "get", return_value=response(payload)) as get:
             bars = stock_api.get_kline("sh603893", 60)
         self.assertEqual(bars, [{"date": "2026-09-22", "open": 203.9,
-                                 "close": 217.8, "high": 217.8, "low": 203.9}])
+                                 "close": 217.8, "high": 217.8, "low": 203.9,
+                                 "vol": 254013.0}])
         self.assertEqual(get.call_count, 1)
         self.assertEqual(get.call_args.kwargs["params"]["param"], "sh603893,day,,,60,qfq")
 
