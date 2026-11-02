@@ -20,3 +20,4 @@ dist/
 
 # builder 每次构建生成（EXE 徽标显示），不入库
 assets/build_info.json
+logs/
