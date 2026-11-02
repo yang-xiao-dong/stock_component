@@ -8,7 +8,7 @@
   /* 个股视图专属样式（基础样式见 shared.css） */
   .price { font-size: 32px; }
   .chg { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  canvas { height: 92px; min-height: 80px; }
+  canvas { height: 122px; min-height: 96px; }
 
   .stock-nav {
     display: flex;
@@ -77,6 +77,7 @@
   }
   .grid .k { color: #6b7382; font-size: 9px; }
   .grid .v { color: #c8cdd8; font-variant-numeric: tabular-nums; }
+  .grid .sub { color: #6b7382; font-size: 9px; height: 12px; line-height: 12px; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -115,7 +116,7 @@
     <div><div class="k">今开</div><div class="v" id="open">--</div></div>
     <div><div class="k">最高</div><div class="v" id="high">--</div></div>
     <div><div class="k">最低</div><div class="v" id="low">--</div></div>
-    <div><div class="k">成交量</div><div class="v" id="vol">--</div></div>
+    <div><div class="k">成交量</div><div class="v" id="vol">--</div><div class="sub" id="volRatio"></div></div>
     <div><div class="k">成交额</div><div class="v" id="amt">--</div></div>
     <div><div class="k">PE(TTM)</div><div class="v" id="peTtm">--</div></div>
     <div><div class="k">PE(动)</div><div class="v" id="peDyn">--</div></div>
@@ -194,6 +195,9 @@ function render(rt) {
   $('high').textContent = rt.high != null ? rt.high.toFixed(2) : '--';
   $('low').textContent = rt.low != null ? rt.low.toFixed(2) : '--';
   $('vol').textContent = rt.volume != null ? (rt.volume / 10000).toFixed(1) + '万手' : '--';
+  const ratio = rt.liang_ratio;
+  $('volRatio').textContent = ratio != null ? `量比 ${ratio.toFixed(2)}` : '';
+  $('volRatio').style.color = ratio == null ? '' : (ratio >= 2.5 ? '#ff5252' : (ratio >= 1.5 ? '#e6a23c' : ''));
   $('amt').textContent = rt.amount != null ? rt.amount.toFixed(2) + '亿' : '--';
   const pe = v => (v != null && v > 0) ? v.toFixed(1) : '--';
   $('peTtm').textContent = pe(rt.pe_ttm);
@@ -211,20 +215,47 @@ function render(rt) {
   document.title = `${rt.name || '--'} ${fmtCode(rt.code)}`;
 }
 
+/* 累计分时量 -> 单分钟量；任一点无量或累计值大幅回退（旧快照误存/数据损坏）
+   返回 null，量柱整段不画，价格图占满全高。口径与 core/vol_calc 一致。 */
+function volDeltas(points) {
+  const vols = points.map(p => (typeof p.vol === 'number' && isFinite(p.vol)) ? p.vol : null);
+  if (vols.some(v => v == null)) return null;
+  let negative = 0;
+  const deltas = vols.map((v, i) => {
+    const d = v - (i ? vols[i - 1] : 0);
+    if (d < 0) { negative += -d; return 0; }
+    return d;
+  });
+  return negative > 0.01 * Math.max(vols[vols.length - 1], 0) ? null : deltas;
+}
+
+/* 量柱副图占下段约30%，与上段价格 x 轴对齐；无量时返回全高（不画副图） */
+function volPaneSplit(h, hasVol) {
+  const volH = hasVol ? Math.max(Math.round(h * 0.3), 24) : 0;
+  return { priceH: h - volH, volH };
+}
+
+function volPaneSeparator(ctx, w, priceH) {
+  ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, priceH + 1.5); ctx.lineTo(w, priceH + 1.5); ctx.stroke();
+}
+
 function drawChart(points, prevClose) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!points || points.length < 2) { drawChartMessage('暂无足够分时数据，稍后自动重试'); return; }
+  const deltas = volDeltas(points);
+  const priceH = volPaneSplit(h, !!deltas).priceH;
   const prices = points.map(p => p.price);
   let max = Math.max(...prices, prevClose), min = Math.min(...prices, prevClose);
   const pad = (max - min) * 0.1 || 0.1; max += pad; min -= pad;
   const N = 242;
   const x = i => 2 + i / (N - 1) * (w - 4);
-  const y = p => 6 + (max - p) / (max - min) * (h - 12);
+  const y = p => 6 + (max - p) / (max - min) * (priceH - 12);
 
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {
-    ctx.beginPath(); ctx.moveTo(0, h*f); ctx.lineTo(w, h*f); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(w, priceH*f); ctx.stroke();
   });
   ctx.strokeStyle = 'rgba(255,255,255,.18)';
   ctx.setLineDash([3,3]); ctx.beginPath();
@@ -238,25 +269,42 @@ function drawChart(points, prevClose) {
     i ? ctx.lineTo(px, y(p.price)) : ctx.moveTo(px, y(p.price));
   });
   ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.stroke();
-  ctx.lineTo(x(Math.min(points.length-1, N-1)), h); ctx.lineTo(x(0), h); ctx.closePath();
-  const g = ctx.createLinearGradient(0, 0, 0, h);
+  ctx.lineTo(x(Math.min(points.length-1, N-1)), priceH); ctx.lineTo(x(0), priceH); ctx.closePath();
+  const g = ctx.createLinearGradient(0, 0, 0, priceH);
   g.addColorStop(0, color + '55'); g.addColorStop(1, color + '05');
   ctx.fillStyle = g; ctx.fill();
+
+  if (!deltas) return;
+  volPaneSeparator(ctx, w, priceH);
+  const top = priceH + 3, bottom = h;
+  const maxD = Math.max(...deltas) || 1;
+  ctx.globalAlpha = .8;
+  points.forEach((p, i) => {
+    if (!deltas[i]) return;
+    const up = i ? p.price >= points[i-1].price : p.price >= prevClose;
+    ctx.fillStyle = up ? '#ff5252' : '#26c281';
+    const bh = Math.max(1, deltas[i] / maxD * (bottom - top));
+    ctx.fillRect(x(Math.min(i, N-1)) - 0.6, bottom - bh, 1.2, bh);
+  });
+  ctx.globalAlpha = 1;
 }
 
 function drawKline(bars) {
   const { ctx, w, h } = setupCanvas();
   ctx.clearRect(0, 0, w, h);
   if (!bars || bars.length < 2) { drawChartMessage('暂无足够日 K 数据，稍后自动重试'); return; }
+  const vols = bars.map(b => (typeof b.vol === 'number' && isFinite(b.vol)) ? b.vol : null);
+  const hasVol = vols.some(v => v != null);   // 旧库日K行无量：仅缺的日期不画柱
+  const priceH = volPaneSplit(h, hasVol).priceH;
   let max = -1e9, min = 1e9;
   bars.forEach(b => { max = Math.max(max, b.high); min = Math.min(min, b.low); });
   const pad = (max - min) * 0.08 || 0.1; max += pad; min -= pad;
-  const y = p => 6 + (max - p) / (max - min) * (h - 12);
+  const y = p => 6 + (max - p) / (max - min) * (priceH - 12);
   const slot = (w - 4) / bars.length, bw = Math.max(1.5, slot * 0.6);
 
   ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach(f => {
-    ctx.beginPath(); ctx.moveTo(0, h*f); ctx.lineTo(w, h*f); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, priceH*f); ctx.lineTo(w, priceH*f); ctx.stroke();
   });
 
   bars.forEach((b, i) => {
@@ -269,6 +317,28 @@ function drawKline(bars) {
     ctx.fillStyle = color;
     ctx.fillRect(cx - bw/2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
   });
+
+  if (!hasVol) return;
+  volPaneSeparator(ctx, w, priceH);
+  const ma5 = vols.map((v, i) => {
+    const win = vols.slice(Math.max(0, i - 4), i + 1);
+    return (win.length === 5 && win.every(x => x != null))
+      ? win.reduce((a, b) => a + b, 0) / 5 : null;
+  });
+  const maxV = Math.max(1, ...vols.filter(v => v != null), ...ma5.filter(v => v != null));
+  const top = priceH + 12, bottom = h;   // 上留一行给图例
+  bars.forEach((b, i) => {
+    const v = vols[i]; if (v == null) return;
+    ctx.fillStyle = (b.close >= b.open) ? 'rgba(255,82,82,.8)' : 'rgba(38,194,129,.8)';
+    const bh = Math.max(1, v / maxV * (bottom - top));
+    ctx.fillRect(2 + slot * i + (slot - bw) / 2, bottom - bh, bw, bh);
+  });
+  strokeSeries(ctx, ma5.map((v, i) => v == null ? null : [2 + slot * (i + 0.5), bottom - v / maxV * (bottom - top)]),
+               'rgba(230,200,90,.9)', 1);
+  ctx.fillStyle = 'rgba(230,200,90,.8)';
+  ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('量柱 · 5日均量', 4, priceH + 10);
 }
 
 function redrawChart() {
