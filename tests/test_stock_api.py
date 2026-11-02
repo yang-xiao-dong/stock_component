@@ -114,6 +114,26 @@ class ChartApiTests(unittest.TestCase):
         self.assertEqual(batch.rows[0]["time"], "20260922160000")
         self.assertEqual(batch.raw, raw)
 
+    def test_quote_numeric_fields_are_floats(self):
+        # 腾讯响应全是字符串；契约数值字段必须转 float，否则前端 .toFixed 抛
+        # TypeError（v1.2.8/1.2.9 的「连接失败」即 high/low 漏转导致）
+        fields = ["0"] * 54
+        fields[1], fields[2] = "测试", "sh600001"
+        fields[3], fields[4], fields[5] = "12.5", "10", "10.2"      # 价/昨收/开
+        fields[30] = "20260922150000"
+        fields[31], fields[32] = "2.5", "25"                        # 涨跌/涨跌%
+        fields[33], fields[34] = "13", "9.8"                        # 最高/最低
+        fields[36], fields[37] = "12345", "678900"                  # 量(手)/额(万)
+        fields[39], fields[45], fields[46], fields[49] = "20", "100", "2", "1.2"
+        with patch.object(stock_api.session, "get",
+                          return_value=response('v_sh600001="' + "~".join(fields) + '";')):
+            quote = stock_api.get_realtime("sh600001")
+        for key in ("price", "prev_close", "open", "change", "change_pct",
+                    "high", "low", "volume", "amount", "pe_ttm",
+                    "market_cap", "pb", "liang_ratio"):
+            self.assertIsInstance(quote[key], float, f"{key} 应为 float，实为 {type(quote[key])}")
+        self.assertAlmostEqual(quote["amount"], 67.89)
+
 
 if __name__ == "__main__":
     unittest.main()

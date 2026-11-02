@@ -69,8 +69,8 @@ def _parse_fields(f):
         time=quote_time,
         change=float(f[31]),
         change_pct=float(f[32]),
-        high=f[33],
-        low=f[34],
+        high=float(f[33]),
+        low=float(f[34]),
         volume=float(f[36]),          # 手
         amount=float(f[37]) / 10000,  # 亿元
         pe_ttm=_opt_float(f, 39),
